@@ -1,0 +1,27 @@
+flutter_launcher_icons:
+  # Source image — your Bitez logo (1024x1024 PNG recommended)
+  image_path: "assets/bitez_logo.png"
+
+  # ── Android ────────────────────────────────────────────────────────────────
+  android: true
+  # Adaptive icon (Android 8.0+): uses the logo on a white background
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/bitez_logo.png"
+  min_sdk_android: 21   # matches your Android minSdkVersion
+
+  # ── iOS ────────────────────────────────────────────────────────────────────
+  ios: true
+  remove_alpha_ios: true   # App Store requires no transparent pixels
+
+  # ── Web ────────────────────────────────────────────────────────────────────
+  web:
+    generate: true
+    image_path: "assets/bitez_logo.png"
+    background_color: "#FFFFFF"
+    theme_color: "#1D9E75"
+
+  # ── Windows ────────────────────────────────────────────────────────────────
+  windows:
+    generate: true
+    image_path: "assets/bitez_logo.png"
+    icon_size: 48

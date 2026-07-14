@@ -1,0 +1,233 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
+import 'home_screen.dart';
+
+/// Sign-up form: name, email, age, gender, phone number, then a Sign up
+/// button that takes the user straight into the home screen.
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
+
+  @override
+  State<SignupScreen> createState() => _SignupScreenState();
+}
+
+class _SignupScreenState extends State<SignupScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _nameController  = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _ageController   = TextEditingController();
+  final _phoneController = TextEditingController();
+  String? _gender;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _ageController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+    try {
+      await context.read<AuthProvider>().register(
+        name:     _nameController.text.trim(),
+        email:    _emailController.text.trim(),
+        password: _passwordController.text,
+        age:      int.tryParse(_ageController.text),
+        gender:   _gender,
+        phone:    _phoneController.text.trim().isEmpty
+                      ? null
+                      : _phoneController.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not connect to server. Check your connection.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFBF7EF),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Create your account',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Join BITEZ and start cutting food waste today.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF5F5E5A)),
+                  ),
+                  const SizedBox(height: 24),
+
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: _fieldDecoration('Full name'),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Enter your name' : null,
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: _fieldDecoration('Email'),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Enter your email';
+                      if (!v.contains('@') || !v.contains('.')) return 'Enter a valid email';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: _fieldDecoration('Password'),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Enter a password';
+                      if (v.length < 6) return 'Password must be at least 6 characters';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _ageController,
+                          keyboardType: TextInputType.number,
+                          decoration: _fieldDecoration('Age'),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Required';
+                            final age = int.tryParse(v);
+                            if (age == null || age <= 0 || age > 120) return 'Invalid';
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String>(
+                          value: _gender,
+                          decoration: _fieldDecoration('Gender'),
+                          items: const [
+                            DropdownMenuItem(value: 'Female', child: Text('Female')),
+                            DropdownMenuItem(value: 'Male', child: Text('Male')),
+                            DropdownMenuItem(value: 'Other', child: Text('Other')),
+                            DropdownMenuItem(
+                              value: 'Prefer not to say',
+                              child: Text('Prefer not to say'),
+                            ),
+                          ],
+                          onChanged: (v) => setState(() => _gender = v),
+                          validator: (v) => v == null ? 'Select one' : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: _fieldDecoration('Phone number'),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Enter your number';
+                      if (v.trim().length < 7) return 'Enter a valid number';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  ElevatedButton(
+                    onPressed: _loading ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2A4E7C),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Sign up'),
+                  ),
+                  const SizedBox(height: 14),
+
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: const Text.rich(
+                        TextSpan(
+                          text: 'Already have an account? ',
+                          style: TextStyle(fontSize: 13, color: Color(0xFF5F5E5A)),
+                          children: [
+                            TextSpan(
+                              text: 'Log in',
+                              style: TextStyle(
+                                color: Color(0xFF185FA5),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+}
