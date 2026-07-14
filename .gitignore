@@ -1,0 +1,23 @@
+# ── IDE ────────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+
+# ── Flutter / Dart ─────────────────────────────────────────────────────────────
+bitez_app/build/
+bitez_app/.dart_tool/
+bitez_app/.flutter-plugins
+bitez_app/.flutter-plugins-dependencies
+bitez_app/pubspec.lock   # keep this if you want reproducible builds; remove line if not
+
+# ── Node / Backend ─────────────────────────────────────────────────────────────
+bitez_backend/node_modules/
+bitez_backend/.env          # NEVER commit secrets
+bitez_backend/*.log
+bitez_backend/npm-debug.log*
+bitez_backend/dist/
+bitez_backend/uploads/
+
+# ── OS ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
