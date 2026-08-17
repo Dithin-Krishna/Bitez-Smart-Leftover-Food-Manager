@@ -19,6 +19,13 @@ class FridgeService {
     });
   }
 
+  /// Returns flat list of all fridge items for the user.
+  Future<List<Map<String, dynamic>>> getAllItems({required String token}) async {
+    final json = await ApiService.instance.get('/api/fridge', token: token);
+    final rawList = json['items'] as List<dynamic>? ?? [];
+    return rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // ── POST /api/fridge ───────────────────────────────────────────────────────
   Future<Map<String, dynamic>> addItem({
     required String token,
@@ -56,8 +63,23 @@ class FridgeService {
     return Map<String, dynamic>.from(json['item'] as Map);
   }
 
+  // ── POST /api/fridge/bulk ──────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> addBulkItems({
+    required String token,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final json = await ApiService.instance.post(
+      '/api/fridge/bulk',
+      {'items': items},
+      token: token,
+    );
+    final rawList = json['items'] as List<dynamic>? ?? [];
+    return rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // ── DELETE /api/fridge/:id ─────────────────────────────────────────────────
   Future<void> deleteItem({required String token, required String id}) async {
     await ApiService.instance.delete('/api/fridge/$id', token: token);
   }
 }
+

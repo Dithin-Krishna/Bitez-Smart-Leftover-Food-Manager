@@ -33,6 +33,9 @@ app.use('/api/auth',    require('./routes/auth'));
 app.use('/api/fridge',  require('./routes/fridge'));
 app.use('/api/recipes', require('./routes/recipes'));
 app.use('/api/user',    require('./routes/user'));
+app.use('/api/chat',    require('./routes/chat'));
+app.use('/api/vision',  require('./routes/vision'));
+app.use('/api/grocery', require('./routes/grocery'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -60,7 +63,7 @@ app.use((err, req, res, next) => {
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀  Bitez backend running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀  Bitez backend running on http://0.0.0.0:${PORT}`);
   console.log(`📡  Environment: ${process.env.NODE_ENV || 'development'}`);
 });

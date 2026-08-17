@@ -1,9 +1,44 @@
 const router     = require('express').Router();
 const FridgeItem = require('../models/FridgeItem');
+const GroceryItem = require('../models/GroceryItem');
 const auth       = require('../middleware/authMiddleware');
 
 // All fridge routes require authentication
 router.use(auth);
+
+/**
+ * Helper: Automatically adds an item to the Grocery List if its quantity drops to <= 1 or out of stock.
+ */
+async function autoCheckLowStockGrocery(userId, fridgeItem, customReason) {
+  try {
+    if (!fridgeItem) return;
+    const isLow = fridgeItem.qty <= 1;
+    if (!isLow && !customReason) return;
+
+    const label = fridgeItem.label.trim();
+    const existing = await GroceryItem.findOne({
+      userId,
+      label: { $regex: new RegExp(`^${label}$`, 'i') },
+      isBought: false
+    });
+
+    if (!existing) {
+      await GroceryItem.create({
+        userId,
+        label,
+        emoji: fridgeItem.emoji || '🛒',
+        qty: 1,
+        section: fridgeItem.section || 'veggies',
+        category: 'Produce',
+        isBought: false,
+        isAiSuggested: true,
+        reason: customReason || (fridgeItem.qty === 0 ? 'Out of stock in fridge' : `Low stock in fridge (qty: ${fridgeItem.qty})`),
+      });
+    }
+  } catch (err) {
+    console.error('Error auto-adding low stock item to grocery list:', err.message);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/fridge
@@ -31,13 +66,57 @@ router.get('/', async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/fridge/expiry-summary
+// Returns items with expiry dates and summary metrics (expired, expiring soon, fresh).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/expiry-summary', async (req, res, next) => {
+  try {
+    const items = await FridgeItem.find({
+      userId: req.user.id,
+      expiresAt: { $ne: null }
+    }).sort({ expiresAt: 1 });
+
+    const now = new Date();
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(now.getDate() + 3);
+
+    let expiredCount = 0;
+    let expiringSoonCount = 0;
+    let freshCount = 0;
+
+    for (const item of items) {
+      if (item.expiresAt < now) {
+        expiredCount++;
+      } else if (item.expiresAt <= threeDaysFromNow) {
+        expiringSoonCount++;
+      } else {
+        freshCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      summary: {
+        totalTracked: items.length,
+        expiredCount,
+        expiringSoonCount,
+        freshCount,
+      },
+      items,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/fridge
 // Add a single new item.
-// Body: { emoji, label, qty, color, section, expiresAt? }
+// Body: { emoji, label, qty, color, section, expiresAt?, manufacturingDate?, expiryImage?, expiryNotes? }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res, next) => {
   try {
-    const { emoji, label, qty, color, section, expiresAt } = req.body;
+    const { emoji, label, qty, color, section, expiresAt, manufacturingDate, expiryImage, expiryNotes } = req.body;
 
     if (!emoji || !label || !section) {
       return res.status(400).json({
@@ -54,7 +133,12 @@ router.post('/', async (req, res, next) => {
       color: color !== undefined ? Number(color) : undefined,
       section,
       expiresAt: expiresAt || null,
+      manufacturingDate: manufacturingDate || null,
+      expiryImage: expiryImage || null,
+      expiryNotes: expiryNotes || '',
     });
+
+    await autoCheckLowStockGrocery(req.user.id, item);
 
     res.status(201).json({ success: true, item });
   } catch (err) {
@@ -84,6 +168,9 @@ router.post('/bulk', async (req, res, next) => {
     }));
 
     const inserted = await FridgeItem.insertMany(docs, { ordered: false });
+    for (const doc of inserted) {
+      await autoCheckLowStockGrocery(req.user.id, doc);
+    }
     res.status(201).json({ success: true, count: inserted.length, items: inserted });
   } catch (err) {
     next(err);
@@ -106,6 +193,9 @@ router.put('/:id', async (req, res, next) => {
     if (!item) {
       return res.status(404).json({ success: false, message: 'Item not found.' });
     }
+
+    await autoCheckLowStockGrocery(req.user.id, item);
+
     res.json({ success: true, item });
   } catch (err) {
     next(err);
@@ -139,6 +229,8 @@ router.patch('/:id/qty', async (req, res, next) => {
       item.qty = 0;
     }
 
+    await autoCheckLowStockGrocery(req.user.id, item);
+
     res.json({ success: true, item });
   } catch (err) {
     next(err);
@@ -158,6 +250,9 @@ router.delete('/:id', async (req, res, next) => {
     if (!item) {
       return res.status(404).json({ success: false, message: 'Item not found.' });
     }
+
+    await autoCheckLowStockGrocery(req.user.id, item, 'Out of stock in fridge');
+
     res.json({ success: true, message: 'Item deleted.', deletedId: req.params.id });
   } catch (err) {
     next(err);

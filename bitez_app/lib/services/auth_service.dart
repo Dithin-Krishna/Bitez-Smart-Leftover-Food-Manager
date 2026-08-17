@@ -72,4 +72,44 @@ class AuthService {
     final json = await ApiService.instance.get('/api/user/me', token: token);
     return UserModel.fromJson(json['user'] as Map<String, dynamic>);
   }
+
+  // ── Update profile ─────────────────────────────────────────────────────────
+  Future<UserModel> updateProfile(
+    String token, {
+    String? name,
+    int? age,
+    String? gender,
+    String? phone,
+    String? avatarUrl,
+  }) async {
+    final json = await ApiService.instance.put('/api/user/me', {
+      if (name != null) 'name': name,
+      if (age != null) 'age': age,
+      if (gender != null) 'gender': gender,
+      if (phone != null) 'phone': phone,
+      if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    }, token: token);
+    
+    return UserModel.fromJson(json['user'] as Map<String, dynamic>);
+  }
+
+  // ── Forgot Password ────────────────────────────────────────────────────────
+  Future<void> forgotPassword(String email) async {
+    await ApiService.instance.post('/api/auth/forgot-password', {
+      'email': email,
+    });
+  }
+
+  // ── Reset Password ─────────────────────────────────────────────────────────
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    await ApiService.instance.post('/api/auth/reset-password', {
+      'email': email,
+      'otp': otp,
+      'newPassword': newPassword,
+    });
+  }
 }
