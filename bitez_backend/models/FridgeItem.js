@@ -51,6 +51,22 @@ const fridgeItemSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Optional: manufacturing date
+    manufacturingDate: {
+      type: Date,
+      default: null,
+    },
+    // Optional: Base64 or image URL stored in Expiry Vault
+    expiryImage: {
+      type: String,
+      default: null,
+    },
+    // Optional notes e.g., "Opened on 10 Aug", "Best before batch #4"
+    expiryNotes: {
+      type: String,
+      default: '',
+      trim: true,
+    },
   },
   { timestamps: true }
 );

@@ -62,11 +62,49 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateProfile({
+    String? name,
+    int? age,
+    String? gender,
+    String? phone,
+    String? avatarUrl,
+  }) async {
+    if (_token == null) return;
+    
+    final updatedUser = await AuthService.instance.updateProfile(
+      _token!,
+      name: name,
+      age: age,
+      gender: gender,
+      phone: phone,
+      avatarUrl: avatarUrl,
+    );
+    
+    _user = updatedUser;
+    notifyListeners();
+  }
+
   // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> logout() async {
     await AuthService.instance.clearToken();
     _token = null;
     _user  = null;
     notifyListeners();
+  }
+  // ── Forgot Password ────────────────────────────────────────────────────────
+  Future<void> forgotPassword(String email) async {
+    await AuthService.instance.forgotPassword(email);
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    await AuthService.instance.resetPassword(
+      email: email,
+      otp: otp,
+      newPassword: newPassword,
+    );
   }
 }

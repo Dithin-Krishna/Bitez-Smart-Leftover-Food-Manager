@@ -141,4 +141,93 @@ router.post('/refresh', async (req, res, next) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/forgot-password
+// Body: { email }
+// ─────────────────────────────────────────────────────────────────────────────
+const crypto = require('crypto');
+const sendEmail = require('../utils/email');
+
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email required.' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      // Return a success response to prevent email enumeration, but don't do anything
+      return res.status(200).json({ success: true, message: 'If the email exists, an OTP was sent.' });
+    }
+
+    // Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Set OTP and expiration (10 minutes)
+    user.resetPasswordOtp = otp;
+    user.resetPasswordOtpExpires = Date.now() + 10 * 60 * 1000;
+    await user.save();
+
+    // Send email
+    const message = `Your password reset OTP is: ${otp}\n\nIt is valid for 10 minutes. If you didn't request a password reset, please ignore this email.`;
+    
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Bitez - Password Reset OTP',
+        message: message,
+      });
+
+      res.status(200).json({ success: true, message: 'If the email exists, an OTP was sent.' });
+    } catch (err) {
+      user.resetPasswordOtp = undefined;
+      user.resetPasswordOtpExpires = undefined;
+      await user.save();
+      return res.status(500).json({ success: false, message: 'Failed to send email. Try again later.' });
+    }
+
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/reset-password
+// Body: { email, otp, newPassword }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Email, OTP, and new password are required.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+      resetPasswordOtp: otp,
+      resetPasswordOtpExpires: { $gt: Date.now() } // Ensure OTP hasn't expired
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+    }
+
+    // Hash is handled by the pre-save hook in User model
+    user.passwordHash = newPassword;
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordOtpExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Password has been reset successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

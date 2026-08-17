@@ -2147,6 +2147,7 @@ import '../widgets/steam_painter.dart';
 import '../widgets/smoke_text_formation.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
+import 'forgot_password_screen.dart';
 
 /// Full intro sequence:
 /// 1. Big bowl + rising steam, full screen.
@@ -2443,6 +2444,7 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -2474,10 +2476,10 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not connect to server. Check your connection.')),
+        SnackBar(content: Text('Could not connect to server: $e')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -2501,12 +2503,13 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
               const SizedBox(height: 10),
               const Text(
                 'Welcome back',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
               ),
               const SizedBox(height: 24),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                style: const TextStyle(color: Colors.blue),
                 decoration: InputDecoration(
                   hintText: 'name@email.com',
                   filled: true,
@@ -2517,12 +2520,44 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
               const SizedBox(height: 12),
               TextField(
                 controller: _passwordCtrl,
-                obscureText: true,
+                obscureText: _obscurePassword,
+                style: const TextStyle(color: Colors.blue),
                 decoration: InputDecoration(
                   hintText: 'Password',
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                    );
+                  },
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(50, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Forgot Password?',
+                    style: TextStyle(color: Color(0xFF185FA5), fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),

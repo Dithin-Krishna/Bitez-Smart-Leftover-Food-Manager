@@ -23,6 +23,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _phoneController = TextEditingController();
   String? _gender;
   bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -58,10 +59,10 @@ class _SignupScreenState extends State<SignupScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not connect to server. Check your connection.')),
+        SnackBar(content: Text('Could not connect to server: $e')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -94,6 +95,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
                   TextFormField(
                     controller: _nameController,
+                    style: const TextStyle(color: Colors.blue),
                     decoration: _fieldDecoration('Full name'),
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Enter your name' : null,
@@ -103,6 +105,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.blue),
                     decoration: _fieldDecoration('Email'),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Enter your email';
@@ -114,8 +117,22 @@ class _SignupScreenState extends State<SignupScreen> {
 
                   TextFormField(
                     controller: _passwordController,
-                    obscureText: true,
-                    decoration: _fieldDecoration('Password'),
+                    obscureText: _obscurePassword,
+                    style: const TextStyle(color: Colors.blue),
+                    decoration: _fieldDecoration(
+                      'Password',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          color: Colors.grey,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Enter a password';
                       if (v.length < 6) return 'Password must be at least 6 characters';
@@ -130,6 +147,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         child: TextFormField(
                           controller: _ageController,
                           keyboardType: TextInputType.number,
+                          style: const TextStyle(color: Colors.blue),
                           decoration: _fieldDecoration('Age'),
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) return 'Required';
@@ -144,6 +162,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         flex: 2,
                         child: DropdownButtonFormField<String>(
                           value: _gender,
+                          style: const TextStyle(color: Colors.blue, fontSize: 16),
                           decoration: _fieldDecoration('Gender'),
                           items: const [
                             DropdownMenuItem(value: 'Female', child: Text('Female')),
@@ -165,6 +184,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   TextFormField(
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
+                    style: const TextStyle(color: Colors.blue),
                     decoration: _fieldDecoration('Phone number'),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Enter your number';
@@ -221,13 +241,14 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  InputDecoration _fieldDecoration(String hint) {
+  InputDecoration _fieldDecoration(String hint, {Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hint,
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      suffixIcon: suffixIcon,
     );
   }
 }

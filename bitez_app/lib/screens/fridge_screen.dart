@@ -1,9 +1,16 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/food_recognition_service.dart';
 import '../services/fridge_service.dart';
+import '../widgets/food_confirmation_dialog.dart';
+import 'chat_screen.dart';
+import 'grocery_list_screen.dart';
+import 'expiry_tracker_screen.dart';
 
 /// Realistic top-bottom double-door fridge.
 /// • TOP  = Freezer door – hinge LEFT, handle RIGHT, opens leftward (rotateY)
@@ -81,9 +88,27 @@ class _FridgeScreenState extends State<FridgeScreen>
       if (s == AnimationStatus.completed) setState(() => _botOpen = true);
       if (s == AnimationStatus.dismissed) setState(() => _botOpen = false);
     });
+  }
 
-    // Load items from API after first frame so context is available
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadItems());
+  String? _lastToken;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final token = context.watch<AuthProvider>().token;
+    if (token != _lastToken) {
+      _lastToken = token;
+      if (token != null) {
+        _loadItems();
+      } else {
+        setState(() {
+          _frozen = [];
+          _dairy  = [];
+          _vegs   = [];
+          _fruits = [];
+        });
+      }
+    }
   }
 
   Future<void> _loadItems() async {
@@ -93,16 +118,61 @@ class _FridgeScreenState extends State<FridgeScreen>
       setState(() { _loadingItems = true; _loadError = null; });
       final grouped = await FridgeService.instance.getGrouped(token);
       if (!mounted) return;
+
+      var frozen = _mapList(grouped['frozen']);
+      var dairy  = _mapList(grouped['dairy']);
+      var vegs   = _mapList(grouped['veggies']);
+      var fruits = _mapList(grouped['fruits']);
+
+      // If user's fridge in MongoDB is empty, seed default items automatically
+      if (frozen.isEmpty && dairy.isEmpty && vegs.isEmpty && fruits.isEmpty) {
+        await _seedDefaultFridgeItems(token);
+        final newGrouped = await FridgeService.instance.getGrouped(token);
+        frozen = _mapList(newGrouped['frozen']);
+        dairy  = _mapList(newGrouped['dairy']);
+        vegs   = _mapList(newGrouped['veggies']);
+        fruits = _mapList(newGrouped['fruits']);
+      }
+
       setState(() {
-        _frozen = _mapList(grouped['frozen']);
-        _dairy  = _mapList(grouped['dairy']);
-        _vegs   = _mapList(grouped['veggies']);
-        _fruits = _mapList(grouped['fruits']);
+        _frozen = frozen;
+        _dairy  = dairy;
+        _vegs   = vegs;
+        _fruits = fruits;
         _loadingItems = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() { _loadError = e.toString(); _loadingItems = false; });
+    }
+  }
+
+  Future<void> _seedDefaultFridgeItems(String token) async {
+    final defaultItems = [
+      {'emoji': '🥟', 'label': 'Dumplings', 'qty': 12, 'color': 0xFF1E5B94, 'section': 'frozen'},
+      {'emoji': '🍦', 'label': 'Ice Cream', 'qty': 2, 'color': 0xFF2A75B8, 'section': 'frozen'},
+      {'emoji': '🥛', 'label': 'Fresh Milk', 'qty': 2, 'color': 0xFF2A5B94, 'section': 'dairy'},
+      {'emoji': '🥚', 'label': 'Eggs', 'qty': 6, 'color': 0xFF2A5B94, 'section': 'dairy'},
+      {'emoji': '🧀', 'label': 'Cheddar', 'qty': 1, 'color': 0xFF3575B8, 'section': 'dairy'},
+      {'emoji': '🥦', 'label': 'Broccoli', 'qty': 2, 'color': 0xFF1E6B4A, 'section': 'veggies'},
+      {'emoji': '🥕', 'label': 'Carrots', 'qty': 4, 'color': 0xFF28875D, 'section': 'veggies'},
+      {'emoji': '🧄', 'label': 'Garlic', 'qty': 1, 'color': 0xFF32A370, 'section': 'veggies'},
+      {'emoji': '🧅', 'label': 'Onion', 'qty': 3, 'color': 0xFF28875D, 'section': 'veggies'},
+      {'emoji': '🍎', 'label': 'Red Apples', 'qty': 5, 'color': 0xFF8A3B2A, 'section': 'fruits'},
+      {'emoji': '🍌', 'label': 'Bananas', 'qty': 6, 'color': 0xFFA84E38, 'section': 'fruits'},
+    ];
+
+    for (final item in defaultItems) {
+      try {
+        await FridgeService.instance.addItem(
+          token: token,
+          emoji: item['emoji'] as String,
+          label: item['label'] as String,
+          qty: item['qty'] as int,
+          color: item['color'] as int,
+          section: item['section'] as String,
+        );
+      } catch (_) {}
     }
   }
 
@@ -155,11 +225,90 @@ class _FridgeScreenState extends State<FridgeScreen>
     }
   }
 
+  Future<void> _scanFoodAI() async {
+    try {
+      final token = context.read<AuthProvider>().token;
+      final picker = ImagePicker();
+      final xfile = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      if (xfile == null) return;
+      final file = File(xfile.path);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🔍 AI is analyzing image with YOLO & Gemini Vision...'),
+          backgroundColor: _appIndigo,
+        ),
+      );
+
+      // Phase 2, 3, 4: Hybrid recognition pipeline
+      final pipelineResults = await FoodRecognitionService.instance.recognizeFoodPipeline(file, token: token);
+
+      if (!mounted) return;
+
+      if (pipelineResults.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ No food items detected in image. Please try taking a clearer photo of food.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Phase 5: User Confirmation Dialog
+      final confirmedItems = await FoodConfirmationDialog.show(
+        context,
+        imageFile: file,
+        detectedItems: pipelineResults,
+      );
+
+      if (!mounted || confirmedItems == null || confirmedItems.isEmpty) return;
+
+      // Phase 6: Save to Virtual Fridge MongoDB
+      if (token != null) {
+        final payload = confirmedItems.map((item) => {
+          'emoji': item.emoji,
+          'label': item.label,
+          'qty': item.qty,
+          'color': 0xFF2A4E7C,
+          'section': item.section,
+        }).toList();
+
+        await FridgeService.instance.addBulkItems(token: token, items: payload);
+        await _loadItems(); // Refresh inventory live
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Added ${confirmedItems.length} food item${confirmedItems.length == 1 ? "" : "s"} to fridge!'),
+            backgroundColor: _appIndigo,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Scan error: $e')),
+        );
+      }
+    }
+  }
+
   // ── Root ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bodyBg,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _scanFoodAI,
+        backgroundColor: const Color(0xFF4A90C4),
+        icon: const Icon(Icons.center_focus_strong, color: Colors.white),
+        label: const Text(
+          'Scan Food (AI)',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
       body: SafeArea(
         child: Stack(children: [
           Column(children: [
@@ -205,65 +354,112 @@ class _FridgeScreenState extends State<FridgeScreen>
             ),
         ]),
       ),
+
     );
   }
 
   // ── App bar ────────────────────────────────────────────────────────────────
   Widget _topBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: Row(children: [
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white, size: 18),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('My Fridge',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800)),
-          Text(
-            '${_topOpen ? "❄️ Freezer open" : "❄️ Tap freezer"}  •  '
-            '${_botOpen ? "🥗 Fridge open" : "🥗 Tap fridge"}',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 10),
-          ),
-        ]),
-        const Spacer(),
-        if (_topOpen || _botOpen)
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Row(
+        children: [
           GestureDetector(
-            onTap: () {
-              _topCtrl.reverse();
-              _botCtrl.reverse();
-            },
+            onTap: () => Navigator.pop(context),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: _appIndigo.withValues(alpha: 0.25),
+                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: _appIndigo.withValues(alpha: 0.5)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
-              child: const Text('Close all',
-                  style:
-                      TextStyle(color: Colors.white, fontSize: 11)),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
             ),
           ),
-      ]),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'My Fridge',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${_topOpen ? "❄️ Freezer open" : "❄️ Tap freezer"} • ${_botOpen ? "🥗 Fridge open" : "🥗 Tap fridge"}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.timer_outlined, color: Colors.orangeAccent, size: 18),
+            tooltip: 'Expiry Tracker & Vault',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpiryTrackerScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Text('🛒', style: TextStyle(fontSize: 15)),
+            tooltip: 'Smart Grocery List',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF2A4E7C),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GroceryListScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Text('🍳', style: TextStyle(fontSize: 15)),
+            tooltip: 'AI Chef Assistant',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFE07A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChatScreen()),
+              );
+            },
+          ),
+          if (_topOpen || _botOpen) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.unfold_less_rounded, color: Colors.white, size: 18),
+              tooltip: 'Close doors',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white24,
+                padding: const EdgeInsets.all(6),
+                minimumSize: const Size(36, 36),
+              ),
+              onPressed: () {
+                _topCtrl.reverse();
+                _botCtrl.reverse();
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -928,18 +1124,53 @@ class _FridgeScreenState extends State<FridgeScreen>
               child: const Text('Cancel',
                   style: TextStyle(color: Colors.grey))),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               final e = ec.text.trim();
               final l = lc.text.trim();
               final q = int.tryParse(qc.text) ?? 1;
               if (e.isNotEmpty && l.isNotEmpty) {
-                setState(() => shelf.add({
-                      'emoji': e,
-                      'label': l,
-                      'qty': q,
-                      'color': color.toARGB32(),
-                    }));
                 Navigator.pop(ctx);
+                
+                String section = 'veggies';
+                if (shelf == _frozen) {
+                  section = 'frozen';
+                } else if (shelf == _dairy) {
+                  section = 'dairy';
+                } else if (shelf == _fruits) {
+                  section = 'fruits';
+                }
+
+                final token = context.read<AuthProvider>().token;
+                if (token != null) {
+                  try {
+                    final item = await FridgeService.instance.addItem(
+                      token: token,
+                      emoji: e,
+                      label: l,
+                      qty: q,
+                      color: color.toARGB32(),
+                      section: section,
+                    );
+                    if (mounted) {
+                      setState(() => shelf.add({
+                            '_id': item['_id']?.toString() ?? '',
+                            'emoji': item['emoji']?.toString() ?? e,
+                            'label': item['label']?.toString() ?? l,
+                            'qty': (item['qty'] as num?)?.toInt() ?? q,
+                            'color': (item['color'] as num?)?.toInt() ?? color.toARGB32(),
+                          }));
+                    }
+                  } catch (_) {
+                    if (mounted) {
+                      setState(() => shelf.add({
+                            'emoji': e,
+                            'label': l,
+                            'qty': q,
+                            'color': color.toARGB32(),
+                          }));
+                    }
+                  }
+                }
               }
             },
             child: Text('Add',
@@ -993,9 +1224,19 @@ class _FridgeScreenState extends State<FridgeScreen>
               child: const Text('Keep',
                   style: TextStyle(color: Colors.grey))),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              final item = list[i];
+              final id = item['_id']?.toString() ?? '';
+              final token = context.read<AuthProvider>().token;
+              
               setState(() => list.removeAt(i));
               Navigator.pop(ctx);
+
+              if (id.isNotEmpty && token != null) {
+                try {
+                  await FridgeService.instance.deleteItem(token: token, id: id);
+                } catch (_) {}
+              }
             },
             child: const Text('Remove',
                 style: TextStyle(

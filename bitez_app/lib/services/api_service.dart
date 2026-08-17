@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Custom exception carrying a user-readable message and HTTP status code.
@@ -13,19 +14,33 @@ class ApiException implements Exception {
 }
 
 /// Central HTTP client for the Bitez backend.
-///
-/// Usage:
-///   final api = ApiService.instance;
-///   final json = await api.get('/api/fridge', token: myToken);
 class ApiService {
   ApiService._();
   static final ApiService instance = ApiService._();
 
-  // ── Base URL ──────────────────────────────────────────────────────────────
-  // Android emulator → 10.0.2.2 maps to localhost on the host machine.
-  // iOS simulator   → 127.0.0.1 works directly.
-  // Physical device → replace with your LAN IP (e.g. 192.168.x.x).
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  /// Allow setting a custom base URL dynamically.
+  static String? customBaseUrl;
+
+  /// Host IP on local Wi-Fi for physical devices
+  static const String _hostWifiIp = '10.198.185.147';
+
+  static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
+
+  static List<String> _defaultCandidates() {
+    if (kIsWeb) return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    try {
+      if (Platform.isAndroid) {
+        return [
+          'http://10.198.185.147:3000',  // Host Wi-Fi IP (physical phone & emulator)
+          'http://10.0.2.2:3000',       // Android Emulator standard loopback
+          'http://localhost:3000',      // Works via ADB reverse tcp:3000 tcp:3000
+          'http://10.173.31.54:3000',   // Previous Wi-Fi IP fallback
+          'http://192.168.0.100:3000',   // Alternative Wi-Fi subnet fallback
+        ];
+      }
+    } catch (_) {}
+    return ['http://10.198.185.147:3000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://10.173.31.54:3000'];
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   Map<String, String> _headers({String? token}) => {
@@ -43,10 +58,27 @@ class ApiService {
   }
 
   // ── HTTP verbs ────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> _send(Future<http.Response> Function(String base) req) async {
+    final candidates = customBaseUrl != null ? [customBaseUrl!] : _defaultCandidates();
+    
+    Object? lastError;
+    for (final base in candidates) {
+      try {
+        final res = await req(base).timeout(const Duration(seconds: 15));
+        customBaseUrl = base; // Cache successful connection URL
+        return _parse(res);
+      } on ApiException {
+        customBaseUrl = base; // Server answered (even with error code), connection succeeded
+        rethrow;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw ApiException('Could not connect to server (${candidates.join(", ")}). Details: ${lastError ?? "Check connection and server status."}');
+  }
+
   Future<Map<String, dynamic>> get(String path, {String? token}) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final res = await http.get(uri, headers: _headers(token: token));
-    return _parse(res);
+    return _send((base) => http.get(Uri.parse('$base$path'), headers: _headers(token: token)));
   }
 
   Future<Map<String, dynamic>> post(
@@ -54,13 +86,11 @@ class ApiService {
     Map<String, dynamic> body, {
     String? token,
   }) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final res = await http.post(
-      uri,
-      headers: _headers(token: token),
-      body: jsonEncode(body),
-    );
-    return _parse(res);
+    return _send((base) => http.post(
+          Uri.parse('$base$path'),
+          headers: _headers(token: token),
+          body: jsonEncode(body),
+        ));
   }
 
   Future<Map<String, dynamic>> put(
@@ -68,13 +98,11 @@ class ApiService {
     Map<String, dynamic> body, {
     String? token,
   }) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final res = await http.put(
-      uri,
-      headers: _headers(token: token),
-      body: jsonEncode(body),
-    );
-    return _parse(res);
+    return _send((base) => http.put(
+          Uri.parse('$base$path'),
+          headers: _headers(token: token),
+          body: jsonEncode(body),
+        ));
   }
 
   Future<Map<String, dynamic>> patch(
@@ -82,18 +110,14 @@ class ApiService {
     Map<String, dynamic> body, {
     String? token,
   }) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final res = await http.patch(
-      uri,
-      headers: _headers(token: token),
-      body: jsonEncode(body),
-    );
-    return _parse(res);
+    return _send((base) => http.patch(
+          Uri.parse('$base$path'),
+          headers: _headers(token: token),
+          body: jsonEncode(body),
+        ));
   }
 
   Future<Map<String, dynamic>> delete(String path, {String? token}) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final res = await http.delete(uri, headers: _headers(token: token));
-    return _parse(res);
+    return _send((base) => http.delete(Uri.parse('$base$path'), headers: _headers(token: token)));
   }
 }
