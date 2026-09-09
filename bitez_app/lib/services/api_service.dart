@@ -21,24 +21,28 @@ class ApiService {
   /// Allow setting a custom base URL dynamically.
   static String? customBaseUrl;
 
-  /// Host IP on local Wi-Fi for physical devices
+  /// Production Cloud URL on Render
+  static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
+
+  /// Host IP on local Wi-Fi for physical devices (local fallback)
   static const String _hostWifiIp = '10.107.38.211';
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
   static List<String> _defaultCandidates() {
-    if (kIsWeb) return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    if (kIsWeb) return [liveCloudUrl, 'http://localhost:3000', 'http://127.0.0.1:3000'];
     try {
       if (Platform.isAndroid) {
         return [
-          'http://127.0.0.1:3000',          // Works via ADB reverse over USB (Instant)
+          liveCloudUrl,                     // 🚀 Production cloud backend (Always online anywhere)
+          'http://127.0.0.1:3000',          // Works via ADB reverse over USB (Instant local fallback)
           'http://localhost:3000',          // Works via ADB reverse
           'http://$_hostWifiIp:3000',       // Host Wi-Fi IP
           'http://10.0.2.2:3000',           // Android Emulator standard loopback
         ];
       }
     } catch (_) {}
-    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
+    return [liveCloudUrl, 'http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -66,7 +70,10 @@ class ApiService {
     Object? lastError;
     for (final base in candidates) {
       try {
-        final res = await req(base).timeout(const Duration(seconds: 4));
+        final timeoutDuration = base.startsWith('https://')
+            ? const Duration(seconds: 25) // Allow time for cloud cold start
+            : const Duration(seconds: 4);  // Quick local network check
+        final res = await req(base).timeout(timeoutDuration);
         customBaseUrl = base; // Cache successful connection URL
         return _parse(res);
       } on ApiException {
