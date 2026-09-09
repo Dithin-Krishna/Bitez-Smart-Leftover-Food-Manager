@@ -2501,26 +2501,31 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 64,
-                height: 50,
-                child: const CustomPaint(painter: BowlPainter()),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Welcome back',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-              ),
-              const SizedBox(height: 10),
-              // 🚦 Connection status dot indicator (Red / Yellow / Green)
-              const ServerStatusIndicator(),
-              const SizedBox(height: 20),
+      child: Stack(
+        children: [
+          // 🚦 Connection status indicator in TOP-LEFT corner
+          const Positioned(
+            top: 16,
+            left: 20,
+            child: ServerStatusIndicator(),
+          ),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 64,
+                    height: 50,
+                    child: const CustomPaint(painter: BowlPainter()),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Welcome back',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                  ),
+                  const SizedBox(height: 24),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
@@ -2671,6 +2676,8 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
           ),
         ),
       ),
-    );
+    ],
+  ),
+);
   }
 }
