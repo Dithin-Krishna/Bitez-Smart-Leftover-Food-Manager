@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/server_status_indicator.dart';
 import 'home_screen.dart';
 
 /// Sign-up form: name, email, age, gender, phone number, then a Sign up
@@ -24,6 +25,14 @@ class _SignupScreenState extends State<SignupScreen> {
   String? _gender;
   bool _loading = false;
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (ApiService.connectionStatus.value != ServerConnectionStatus.connected) {
+      ApiService.instance.checkHealth();
+    }
+  }
 
   @override
   void dispose() {
@@ -91,7 +100,13 @@ class _SignupScreenState extends State<SignupScreen> {
                     'Join BITEZ and start cutting food waste today.',
                     style: TextStyle(fontSize: 13, color: Color(0xFF5F5E5A)),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 10),
+                  // 🚦 Connection status dot indicator (Red / Yellow / Green)
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: ServerStatusIndicator(),
+                  ),
+                  const SizedBox(height: 20),
 
                   TextFormField(
                     controller: _nameController,
@@ -194,21 +209,71 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  ElevatedButton(
-                    onPressed: _loading ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2A4E7C),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Sign up'),
+                  ValueListenableBuilder<ServerConnectionStatus>(
+                    valueListenable: ApiService.connectionStatus,
+                    builder: (context, status, _) {
+                      final isConnected = status == ServerConnectionStatus.connected;
+                      final isConnecting = status == ServerConnectionStatus.connecting;
+
+                      VoidCallback? onPressed;
+                      String buttonLabel = 'Sign up';
+                      Color buttonColor = const Color(0xFF2A4E7C);
+
+                      if (_loading) {
+                        onPressed = null;
+                      } else if (isConnected) {
+                        onPressed = _submit;
+                        buttonLabel = 'Sign up';
+                        buttonColor = const Color(0xFF2A4E7C);
+                      } else if (isConnecting) {
+                        onPressed = () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('⏳ Connecting to server on Render... Please wait a few seconds.'),
+                              backgroundColor: Color(0xFFD97706),
+                            ),
+                          );
+                        };
+                        buttonLabel = 'Connecting to server...';
+                        buttonColor = const Color(0xFFD97706);
+                      } else {
+                        onPressed = () {
+                          ApiService.instance.checkHealth();
+                        };
+                        buttonLabel = 'Server Offline - Tap to Retry';
+                        buttonColor = const Color(0xFFDC2626);
+                      }
+
+                      return ElevatedButton(
+                        onPressed: onPressed,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: buttonColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: _loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (isConnecting) ...[
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Text(buttonLabel),
+                                ],
+                              ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 14),
 

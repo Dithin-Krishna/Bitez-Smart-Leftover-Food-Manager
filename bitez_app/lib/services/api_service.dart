@@ -13,10 +13,38 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Connection status to the backend server.
+enum ServerConnectionStatus {
+  connecting,   // 🟡 Yellow: in progress (probing or waking up Render)
+  connected,    // 🟢 Green: connected and ready
+  disconnected, // 🔴 Red: could not connect / offline
+}
+
 /// Central HTTP client for the Bitez backend.
 class ApiService {
   ApiService._();
   static final ApiService instance = ApiService._();
+
+  /// Reactive status notifier for UI indicators.
+  static final ValueNotifier<ServerConnectionStatus> connectionStatus =
+      ValueNotifier<ServerConnectionStatus>(ServerConnectionStatus.connecting);
+
+  /// Probes the backend server health check endpoint '/'
+  Future<bool> checkHealth() async {
+    connectionStatus.value = ServerConnectionStatus.connecting;
+    try {
+      final res = await get('/');
+      if (res['status'] == 'OK' || res['message'] != null) {
+        connectionStatus.value = ServerConnectionStatus.connected;
+        return true;
+      }
+      connectionStatus.value = ServerConnectionStatus.disconnected;
+      return false;
+    } catch (_) {
+      connectionStatus.value = ServerConnectionStatus.disconnected;
+      return false;
+    }
+  }
 
   /// Allow setting a custom base URL dynamically.
   static String? customBaseUrl;
