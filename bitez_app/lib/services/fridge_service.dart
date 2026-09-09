@@ -10,9 +10,9 @@ class FridgeService {
   /// Each item map contains all backend fields, including '_id'.
   Future<Map<String, List<Map<String, dynamic>>>> getGrouped(String token) async {
     final json = await ApiService.instance.get('/api/fridge', token: token);
-    final raw  = json['grouped'] as Map<String, dynamic>;
+    final raw  = (json['grouped'] as Map<String, dynamic>?) ?? {};
     return raw.map((section, list) {
-      final items = (list as List)
+      final items = ((list as List?) ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
       return MapEntry(section, items);

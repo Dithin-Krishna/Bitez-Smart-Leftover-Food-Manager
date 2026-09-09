@@ -157,8 +157,10 @@ router.post('/forgot-password', async (req, res, next) => {
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
-      // Return a success response to prevent email enumeration, but don't do anything
-      return res.status(200).json({ success: true, message: 'If the email exists, an OTP was sent.' });
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email. Please enter a registered email address.',
+      });
     }
 
     // Generate a 6-digit OTP

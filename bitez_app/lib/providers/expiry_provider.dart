@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/fridge_item_model.dart';
 import '../services/expiry_service.dart';
 import '../services/fridge_service.dart';
+import '../services/local_notification_service.dart';
 
 class ExpiryProvider extends ChangeNotifier {
   List<FridgeItemModel> _items = [];
@@ -58,9 +59,20 @@ class ExpiryProvider extends ChangeNotifier {
       final rawItems = await FridgeService.instance.getAllItems(token: token);
       _items = rawItems.map((map) => FridgeItemModel.fromJson(map)).toList();
 
-      // Fetch summary metrics
       _summary = await ExpiryService.instance.fetchExpirySummary(token: token);
       
+      // Trigger native phone notification bar alert if items are expiring
+      if (hasUrgentAlerts) {
+        final count = expiredCount + expiringSoonCount;
+        LocalNotificationService.instance.showExpiryNotification(
+          id: 101,
+          title: '⚠️ Bitez Food Expiry Alert',
+          body: expiredCount > 0
+              ? '$expiredCount item(s) expired, $expiringSoonCount expiring soon in your fridge!'
+              : '$expiringSoonCount item(s) in your fridge expire within 48 hours!',
+        );
+      }
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {

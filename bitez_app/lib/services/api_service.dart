@@ -22,7 +22,7 @@ class ApiService {
   static String? customBaseUrl;
 
   /// Host IP on local Wi-Fi for physical devices
-  static const String _hostWifiIp = '10.198.185.147';
+  static const String _hostWifiIp = '192.168.0.160';
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
@@ -31,15 +31,14 @@ class ApiService {
     try {
       if (Platform.isAndroid) {
         return [
-          'http://10.198.185.147:3000',  // Host Wi-Fi IP (physical phone & emulator)
+          'http://127.0.0.1:3000',      // Works via ADB reverse over USB (Instant)
+          'http://localhost:3000',      // Works via ADB reverse
+          'http://192.168.0.160:3000',  // Host Wi-Fi IP
           'http://10.0.2.2:3000',       // Android Emulator standard loopback
-          'http://localhost:3000',      // Works via ADB reverse tcp:3000 tcp:3000
-          'http://10.173.31.54:3000',   // Previous Wi-Fi IP fallback
-          'http://192.168.0.100:3000',   // Alternative Wi-Fi subnet fallback
         ];
       }
     } catch (_) {}
-    return ['http://10.198.185.147:3000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://10.173.31.54:3000'];
+    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://192.168.0.160:3000'];
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -59,12 +58,15 @@ class ApiService {
 
   // ── HTTP verbs ────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> _send(Future<http.Response> Function(String base) req) async {
-    final candidates = customBaseUrl != null ? [customBaseUrl!] : _defaultCandidates();
+    final defaults = _defaultCandidates();
+    final candidates = customBaseUrl != null
+        ? [customBaseUrl!, ...defaults.where((d) => d != customBaseUrl)]
+        : defaults;
     
     Object? lastError;
     for (final base in candidates) {
       try {
-        final res = await req(base).timeout(const Duration(seconds: 15));
+        final res = await req(base).timeout(const Duration(seconds: 4));
         customBaseUrl = base; // Cache successful connection URL
         return _parse(res);
       } on ApiException {
@@ -72,6 +74,9 @@ class ApiService {
         rethrow;
       } catch (e) {
         lastError = e;
+        if (customBaseUrl == base) {
+          customBaseUrl = null; // Invalidate bad cached URL
+        }
       }
     }
     throw ApiException('Could not connect to server (${candidates.join(", ")}). Details: ${lastError ?? "Check connection and server status."}');

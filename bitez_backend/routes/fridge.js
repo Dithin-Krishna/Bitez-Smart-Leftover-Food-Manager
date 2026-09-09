@@ -109,6 +109,8 @@ router.get('/expiry-summary', async (req, res, next) => {
   }
 });
 
+const { getDefaultShelfLifeDays } = require('../models/FoodCatalog');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/fridge
 // Add a single new item.
@@ -125,6 +127,13 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    // Auto-calculate default expiry date if none was explicitly provided
+    let finalExpiresAt = expiresAt || null;
+    if (!finalExpiresAt) {
+      const days = getDefaultShelfLifeDays(label, section);
+      finalExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    }
+
     const item = await FridgeItem.create({
       userId: req.user.id,
       emoji,
@@ -132,7 +141,7 @@ router.post('/', async (req, res, next) => {
       qty:   qty   !== undefined ? Number(qty) : 1,
       color: color !== undefined ? Number(color) : undefined,
       section,
-      expiresAt: expiresAt || null,
+      expiresAt: finalExpiresAt,
       manufacturingDate: manufacturingDate || null,
       expiryImage: expiryImage || null,
       expiryNotes: expiryNotes || '',
@@ -159,13 +168,21 @@ router.post('/bulk', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'items array is required.' });
     }
 
-    // Attach userId to each item
-    const docs = items.map((item) => ({
-      ...item,
-      userId: req.user.id,
-      qty:   item.qty   !== undefined ? Number(item.qty)   : 1,
-      color: item.color !== undefined ? Number(item.color) : undefined,
-    }));
+    // Attach userId to each item and compute default expiresAt if missing
+    const docs = items.map((item) => {
+      let finalExpiresAt = item.expiresAt || null;
+      if (!finalExpiresAt) {
+        const days = getDefaultShelfLifeDays(item.label, item.section);
+        finalExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      }
+      return {
+        ...item,
+        userId: req.user.id,
+        qty:   item.qty   !== undefined ? Number(item.qty)   : 1,
+        color: item.color !== undefined ? Number(item.color) : undefined,
+        expiresAt: finalExpiresAt,
+      };
+    });
 
     const inserted = await FridgeItem.insertMany(docs, { ordered: false });
     for (const doc of inserted) {
@@ -232,6 +249,40 @@ router.patch('/:id/qty', async (req, res, next) => {
     await autoCheckLowStockGrocery(req.user.id, item);
 
     res.json({ success: true, item });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/fridge/expiring
+// Returns items expiring within the next 48 hours for the logged-in user.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/expiring', async (req, res, next) => {
+  try {
+    const now = new Date();
+    const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+    const items = await FridgeItem.find({
+      userId: req.user.id,
+      expiresAt: { $gte: now, $lte: next48Hours },
+    }).sort({ expiresAt: 1 });
+
+    res.json({ success: true, count: items.length, items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/fridge/trigger-expiry-check
+// Manually triggers the expiry notification email check (useful for testing).
+// ─────────────────────────────────────────────────────────────────────────────
+const { checkAndSendExpiryNotifications } = require('../utils/expiryScheduler');
+router.post('/trigger-expiry-check', async (req, res, next) => {
+  try {
+    const result = await checkAndSendExpiryNotifications();
+    res.json({ success: true, message: 'Expiry check triggered manually.', result });
   } catch (err) {
     next(err);
   }

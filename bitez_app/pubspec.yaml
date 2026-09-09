@@ -36,6 +36,7 @@ dependencies:
   provider: ^6.1.2
   path_provider: ^2.1.4
   path: ^1.9.0
+  flutter_local_notifications: ^22.3.0
 
   # TFLite ML & Image Processing
   tflite_flutter: ^0.12.1

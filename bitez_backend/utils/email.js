@@ -27,7 +27,7 @@ const sendEmail = async (options) => {
   }
 
   const mailOptions = {
-    from: 'Bitez Support <support@bitez.app>',
+    from: process.env.EMAIL_FROM || (process.env.EMAIL_USER ? `Bitez App <${process.env.EMAIL_USER}>` : 'Bitez Support <support@bitez.app>'),
     to: options.email,
     subject: options.subject,
     text: options.message,

@@ -185,6 +185,7 @@ class _FridgeScreenState extends State<FridgeScreen>
       'label': item['label']?.toString() ?? '',
       'qty':   (item['qty'] as num?)?.toInt() ?? 0,
       'color': (item['color'] as num?)?.toInt() ?? 0xFF2A4E7C,
+      'expiresAt': item['expiresAt'] != null ? DateTime.tryParse(item['expiresAt'].toString()) : null,
     }).toList();
   }
 
@@ -983,18 +984,53 @@ class _FridgeScreenState extends State<FridgeScreen>
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Large emoji in circle
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: ac.withValues(alpha: isFreeze ? 0.12 : 0.08),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(item['emoji'] as String,
-                    style: const TextStyle(fontSize: 34)),
-              ),
+            // Large emoji in circle with Expiry Notification badge
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: ac.withValues(alpha: isFreeze ? 0.12 : 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(item['emoji'] as String,
+                        style: const TextStyle(fontSize: 34)),
+                  ),
+                ),
+                if (item['expiresAt'] != null) ...[
+                  Builder(
+                    builder: (_) {
+                      final expiresAt = item['expiresAt'] as DateTime;
+                      final now = DateTime.now();
+                      final isExpired = now.isAfter(expiresAt);
+                      final diffDays = expiresAt.difference(now).inDays;
+                      final isExpiringSoon = !isExpired && diffDays <= 2;
+                      if (!isExpired && !isExpiringSoon) return const SizedBox.shrink();
+
+                      return Positioned(
+                        top: -2,
+                        right: -2,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: isExpired ? Colors.red : Colors.amber.shade700,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: Icon(
+                            isExpired ? Icons.priority_high : Icons.access_time_rounded,
+                            size: 10,
+                            color: Colors.white,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 5),
             // Label – FittedBox prevents overflow
