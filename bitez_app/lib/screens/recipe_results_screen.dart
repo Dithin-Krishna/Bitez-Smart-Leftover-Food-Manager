@@ -145,7 +145,9 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children: widget.ingredients.map((ing) {
+                      children: widget.ingredients
+                          .where((ing) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food'].contains(ing.toLowerCase().trim()))
+                          .map((ing) {
                         return Container(
                           margin: const EdgeInsets.only(right: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -674,8 +676,8 @@ class _ElevatedRecipeCard extends StatelessWidget {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    recipe.usedIngredients.isNotEmpty
-                                        ? recipe.usedIngredients.join(', ')
+                                    recipe.usedIngredients.where((i) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food'].contains(i.toLowerCase().trim())).isNotEmpty
+                                        ? recipe.usedIngredients.where((i) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food'].contains(i.toLowerCase().trim())).join(', ')
                                         : 'Input ingredients ready',
                                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF27AE60)),
                                     overflow: TextOverflow.ellipsis,

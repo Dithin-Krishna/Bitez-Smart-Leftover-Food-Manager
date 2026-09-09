@@ -326,37 +326,46 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
         ),
         const SizedBox(height: 8),
 
-        if (_detail.usedIngredients.isEmpty)
-          Text(
-            'Check main ingredient list below.',
-            style: TextStyle(color: isDark ? Colors.white60 : Colors.grey),
-          )
-        else
-          ..._detail.usedIngredients.map((ing) {
-            final checked = _checkedIngredients.contains(ing);
-            return CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              activeColor: primary,
-              value: checked,
-              title: Text(
-                ing,
-                style: TextStyle(
-                  fontSize: 14,
-                  decoration: checked ? TextDecoration.lineThrough : null,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-              onChanged: (val) {
-                setState(() {
-                  if (val == true) {
-                    _checkedIngredients.add(ing);
-                  } else {
-                    _checkedIngredients.remove(ing);
-                  }
-                });
-              },
+        () {
+          final cleanAvailable = _detail.usedIngredients
+              .where((ing) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food'].contains(ing.toLowerCase().trim()))
+              .toList();
+
+          if (cleanAvailable.isEmpty) {
+            return Text(
+              'Check main ingredient list below.',
+              style: TextStyle(color: isDark ? Colors.white60 : Colors.grey),
             );
-          }),
+          }
+
+          return Column(
+            children: cleanAvailable.map((ing) {
+              final checked = _checkedIngredients.contains(ing);
+              return CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                activeColor: primary,
+                value: checked,
+                title: Text(
+                  ing,
+                  style: TextStyle(
+                    fontSize: 14,
+                    decoration: checked ? TextDecoration.lineThrough : null,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true) {
+                      _checkedIngredients.add(ing);
+                    } else {
+                      _checkedIngredients.remove(ing);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          );
+        }(),
 
         if (_detail.missedIngredients.isNotEmpty) ...[
           const SizedBox(height: 16),
