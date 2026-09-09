@@ -262,6 +262,58 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Consumer<ExpiryProvider>(
+              builder: (context, expiry, _) {
+                if (!expiry.hasUrgentAlerts) return const SizedBox.shrink();
+                final count = expiry.expiredCount + expiry.expiringSoonCount;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3CD),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFEEBA)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Color(0xFF856404), size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '⚠️ Expiry Notification ($count item${count == 1 ? "" : "s"})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF856404), fontSize: 13),
+                            ),
+                            Text(
+                              expiry.expiredCount > 0
+                                  ? '${expiry.expiredCount} item(s) expired, ${expiry.expiringSoonCount} expiring soon!'
+                                  : '${expiry.expiringSoonCount} item(s) in your fridge expire within 48h.',
+                              style: const TextStyle(color: Color(0xFF856404), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ExpiryTrackerScreen()),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('View', style: TextStyle(color: Color(0xFF856404), fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             Text(
               'What have you got leftover?',
               style: TextStyle(
