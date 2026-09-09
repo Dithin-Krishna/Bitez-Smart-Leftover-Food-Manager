@@ -83,33 +83,35 @@ class _SignupScreenState extends State<SignupScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF7EF),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Create your account',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Join BITEZ and start cutting food waste today.',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF5F5E5A)),
-                  ),
-                  const SizedBox(height: 10),
-                  // 🚦 Connection status dot indicator (Red / Yellow / Green)
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: ServerStatusIndicator(),
-                  ),
-                  const SizedBox(height: 20),
+        child: Stack(
+          children: [
+            // 🚦 Connection status dot in TOP-LEFT corner
+            const Positioned(
+              top: 16,
+              left: 20,
+              child: ServerStatusIndicator(),
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(28, 64, 28, 24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Create your account',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Join BITEZ and start cutting food waste today.',
+                        style: TextStyle(fontSize: 13, color: Color(0xFF5F5E5A)),
+                      ),
+                      const SizedBox(height: 24),
 
-                  TextFormField(
-                    controller: _nameController,
+                      TextFormField(
+                        controller: _nameController,
                     style: const TextStyle(color: Colors.blue),
                     decoration: _fieldDecoration('Full name'),
                     validator: (v) =>
@@ -296,11 +298,12 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                       ),
                     ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
