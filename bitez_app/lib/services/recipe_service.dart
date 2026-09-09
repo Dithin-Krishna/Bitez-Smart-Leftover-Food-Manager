@@ -23,9 +23,12 @@ class RecipeService {
     List<String> ingredients, {
     String? cuisine,
   }) async {
-    final queryClean = ingredients.map((e) => e.trim()).where((s) => s.isNotEmpty).toList();
+    final queryClean = ingredients
+        .map((e) => e.trim())
+        .where((s) => s.isNotEmpty && !['leftover food', 'leftovers', 'leftover', 'food', 'my food'].contains(s.toLowerCase()))
+        .toList();
     if (queryClean.isEmpty) {
-      return _getFallbackRecipes(ingredients, cuisine: cuisine);
+      return _getFallbackRecipes(['Rice', 'Vegetables', 'Eggs'], cuisine: cuisine);
     }
 
     // Fetch from all sources in parallel

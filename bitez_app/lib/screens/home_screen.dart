@@ -160,6 +160,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  static bool _isGenericNonFood(String s) {
+    final lower = s.toLowerCase().trim();
+    const nonFoodWords = {
+      'leftover food',
+      'leftovers',
+      'leftover',
+      'food',
+      'my food',
+      'waste',
+      'left over',
+      'left over food',
+      'item',
+      'items',
+    };
+    return nonFoodWords.contains(lower);
+  }
+
   Future<void> _generateRecipes() async {
     final textInput = _textController.text.trim();
     if (_pickedImage == null && textInput.isEmpty) {
@@ -177,11 +194,30 @@ class _HomeScreenState extends State<HomeScreen> {
       ingredients = textInput
           .split(RegExp(r'[,;\n]'))
           .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
+          .where((s) => s.isNotEmpty && !_isGenericNonFood(s))
           .toList();
     }
+
+    // If no specific ingredients parsed from text, fetch active items from Virtual Fridge
     if (ingredients.isEmpty) {
-      ingredients = ['leftover food', 'vegetables', 'eggs'];
+      final token = context.read<AuthProvider>().token;
+      if (token != null) {
+        try {
+          final fridgeItems = await FridgeService.instance.getAllItems(token: token);
+          if (fridgeItems.isNotEmpty) {
+            ingredients = fridgeItems
+                .map((i) => i['label']?.toString().trim() ?? '')
+                .where((l) => l.isNotEmpty && !_isGenericNonFood(l))
+                .take(6)
+                .toList();
+          }
+        } catch (_) {}
+      }
+    }
+
+    // If still empty (fridge is empty and no text provided), fallback to real staple foods
+    if (ingredients.isEmpty) {
+      ingredients = ['Rice', 'Vegetables', 'Eggs'];
     }
 
     await Future.delayed(const Duration(milliseconds: 300));
