@@ -22,7 +22,7 @@ class ApiService {
   static String? customBaseUrl;
 
   /// Host IP on local Wi-Fi for physical devices
-  static const String _hostWifiIp = '192.168.0.160';
+  static const String _hostWifiIp = '10.107.38.211';
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
@@ -31,14 +31,14 @@ class ApiService {
     try {
       if (Platform.isAndroid) {
         return [
-          'http://127.0.0.1:3000',      // Works via ADB reverse over USB (Instant)
-          'http://localhost:3000',      // Works via ADB reverse
-          'http://192.168.0.160:3000',  // Host Wi-Fi IP
-          'http://10.0.2.2:3000',       // Android Emulator standard loopback
+          'http://127.0.0.1:3000',          // Works via ADB reverse over USB (Instant)
+          'http://localhost:3000',          // Works via ADB reverse
+          'http://$_hostWifiIp:3000',       // Host Wi-Fi IP
+          'http://10.0.2.2:3000',           // Android Emulator standard loopback
         ];
       }
     } catch (_) {}
-    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://192.168.0.160:3000'];
+    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
