@@ -2145,6 +2145,7 @@ import '../services/api_service.dart';
 import '../widgets/bowl_painter.dart';
 import '../widgets/steam_painter.dart';
 import '../widgets/smoke_text_formation.dart';
+import '../widgets/server_status_indicator.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
@@ -2184,6 +2185,9 @@ class _LoginIntroScreenState extends State<LoginIntroScreen>
   @override
   void initState() {
     super.initState();
+
+    // Probe / wake up Render backend as soon as app opens
+    ApiService.instance.checkHealth();
 
     _main = AnimationController(
       vsync: this,
@@ -2447,6 +2451,14 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
   bool _obscurePassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    if (ApiService.connectionStatus.value != ServerConnectionStatus.connected) {
+      ApiService.instance.checkHealth();
+    }
+  }
+
+  @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
@@ -2505,7 +2517,10 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
                 'Welcome back',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
+              // 🚦 Connection status dot indicator (Red / Yellow / Green)
+              const ServerStatusIndicator(),
+              const SizedBox(height: 20),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
@@ -2561,24 +2576,76 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2A4E7C),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Log in'),
-                ),
+              // 🚦 Status-aware Login Button
+              ValueListenableBuilder<ServerConnectionStatus>(
+                valueListenable: ApiService.connectionStatus,
+                builder: (context, status, _) {
+                  final isConnected = status == ServerConnectionStatus.connected;
+                  final isConnecting = status == ServerConnectionStatus.connecting;
+
+                  VoidCallback? onPressed;
+                  String buttonLabel = 'Log in';
+                  Color buttonColor = const Color(0xFF2A4E7C);
+
+                  if (_loading) {
+                    onPressed = null;
+                  } else if (isConnected) {
+                    onPressed = _login;
+                    buttonLabel = 'Log in';
+                    buttonColor = const Color(0xFF2A4E7C);
+                  } else if (isConnecting) {
+                    onPressed = () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('⏳ Connecting to server on Render... Please wait a few seconds.'),
+                          backgroundColor: Color(0xFFD97706),
+                        ),
+                      );
+                    };
+                    buttonLabel = 'Connecting to server...';
+                    buttonColor = const Color(0xFFD97706);
+                  } else {
+                    // disconnected / red
+                    onPressed = () {
+                      ApiService.instance.checkHealth();
+                    };
+                    buttonLabel = 'Server Offline - Tap to Retry';
+                    buttonColor = const Color(0xFFDC2626);
+                  }
+
+                  return SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: onPressed,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: buttonColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (isConnecting) ...[
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Text(buttonLabel),
+                              ],
+                            ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 14),
               GestureDetector(
