@@ -298,15 +298,16 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                       ),
                     ),
-                    ],
                   ),
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
-      ),
-    );
+      ],
+    ),
+  ),
+);
   }
 
   InputDecoration _fieldDecoration(String hint, {Widget? suffixIcon}) {

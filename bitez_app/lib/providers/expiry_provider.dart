@@ -63,7 +63,6 @@ class ExpiryProvider extends ChangeNotifier {
       
       // Trigger native phone notification bar alert if items are expiring
       if (hasUrgentAlerts) {
-        final count = expiredCount + expiringSoonCount;
         LocalNotificationService.instance.showExpiryNotification(
           id: 101,
           title: '⚠️ Bitez Food Expiry Alert',
