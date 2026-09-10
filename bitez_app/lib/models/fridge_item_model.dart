@@ -46,6 +46,9 @@ class FridgeItemModel {
   final DateTime? manufacturingDate;
   final String? expiryImage;
   final String? expiryNotes;
+  final bool isDonation;
+  final String donationStatus;
+  final String donationNotes;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -61,6 +64,9 @@ class FridgeItemModel {
     this.manufacturingDate,
     this.expiryImage,
     this.expiryNotes,
+    this.isDonation = false,
+    this.donationStatus = 'none',
+    this.donationNotes = '',
     this.createdAt,
     this.updatedAt,
   });
@@ -78,6 +84,9 @@ class FridgeItemModel {
       manufacturingDate: json['manufacturingDate'] != null ? DateTime.tryParse(json['manufacturingDate'].toString())?.toLocal() : null,
       expiryImage: json['expiryImage'],
       expiryNotes: json['expiryNotes'] ?? '',
+      isDonation: json['isDonation'] == true || json['donationStatus'] == 'pledged' || json['donationStatus'] == 'donated',
+      donationStatus: json['donationStatus']?.toString() ?? (json['isDonation'] == true ? 'pledged' : 'none'),
+      donationNotes: json['donationNotes']?.toString() ?? '',
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString())?.toLocal() : null,
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString())?.toLocal() : null,
     );
@@ -96,6 +105,9 @@ class FridgeItemModel {
       'manufacturingDate': manufacturingDate?.toUtc().toIso8601String(),
       'expiryImage': expiryImage,
       'expiryNotes': expiryNotes,
+      'isDonation': isDonation,
+      'donationStatus': donationStatus,
+      'donationNotes': donationNotes,
     };
   }
 
@@ -173,6 +185,9 @@ class FridgeItemModel {
     DateTime? manufacturingDate,
     String? expiryImage,
     String? expiryNotes,
+    bool? isDonation,
+    String? donationStatus,
+    String? donationNotes,
   }) {
     return FridgeItemModel(
       id: id ?? this.id,
@@ -186,6 +201,9 @@ class FridgeItemModel {
       manufacturingDate: manufacturingDate ?? this.manufacturingDate,
       expiryImage: expiryImage ?? this.expiryImage,
       expiryNotes: expiryNotes ?? this.expiryNotes,
+      isDonation: isDonation ?? this.isDonation,
+      donationStatus: donationStatus ?? this.donationStatus,
+      donationNotes: donationNotes ?? this.donationNotes,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

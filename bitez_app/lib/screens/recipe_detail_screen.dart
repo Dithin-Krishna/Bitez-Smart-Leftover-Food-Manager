@@ -1273,8 +1273,11 @@ class _CookDeductionDialogState extends State<_CookDeductionDialog> {
                       for (int i = 0; i < widget.matches.length; i++) {
                         if (!_selected[i]) continue;
                         final fridgeItem = widget.matches[i]['fridgeItem'] as Map<String, dynamic>;
+                        final itemId = (fridgeItem['_id'] ?? fridgeItem['id'])?.toString() ?? '';
+                        final label = fridgeItem['label']?.toString() ?? '';
                         deductions.add({
-                          'itemId': fridgeItem['_id']?.toString() ?? '',
+                          'itemId': itemId,
+                          'label': label,
                           'quantityUsed': _quantities[i],
                         });
                       }
