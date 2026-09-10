@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
+const { geminiLimiter } = require('../middleware/rateLimiters');
 const { validateAndEnrich } = require('../models/FoodCatalog');
 
 /**
@@ -9,7 +10,7 @@ const { validateAndEnrich } = require('../models/FoodCatalog');
  * Phase 3: Gemini Vision Image Analysis
  * Phase 4: Food Catalog Validation & Filtering
  */
-router.post('/detect', authMiddleware, async (req, res, next) => {
+router.post('/detect', authMiddleware, geminiLimiter, async (req, res, next) => {
   try {
     const { imageBase64, yoloDetections } = req.body;
 
@@ -140,7 +141,7 @@ Return ONLY a raw JSON array of strings e.g. ["Milk", "Egg", "Apple", "Chicken",
  * Analyzes a cropped photo of a food item's expiry date label / packaging area.
  * Extracts manufacturing date (MFG), expiration date (EXP / Best Before), and item label.
  */
-router.post('/expiry-ocr', authMiddleware, async (req, res, next) => {
+router.post('/expiry-ocr', authMiddleware, geminiLimiter, async (req, res, next) => {
   try {
     const { imageBase64 } = req.body;
 

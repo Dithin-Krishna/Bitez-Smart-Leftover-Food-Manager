@@ -1,6 +1,7 @@
-const FridgeItem = require('../models/FridgeItem');
-const User       = require('../models/User');
-const sendEmail  = require('./email');
+const FridgeItem   = require('../models/FridgeItem');
+const User         = require('../models/User');
+const sendEmail    = require('./email');
+const alertService = require('./alertService');
 
 /**
  * Checks all fridge items in MongoDB for items expiring within the next 24-48 hours,
@@ -67,6 +68,7 @@ async function checkAndSendExpiryNotifications() {
     return { count: expiringItems.length, usersNotified };
   } catch (err) {
     console.error('🔥 Error running expiry notification scheduler:', err);
+    await alertService.notifyCronFailure('12h Expiry Notification Scheduler', err);
     throw err;
   }
 }
@@ -77,13 +79,17 @@ async function checkAndSendExpiryNotifications() {
 function initExpiryScheduler() {
   // Run once on startup after 10 seconds delay
   setTimeout(() => {
-    checkAndSendExpiryNotifications().catch(() => {});
+    checkAndSendExpiryNotifications().catch((err) => {
+      console.error('Initial expiry check failed:', err.message);
+    });
   }, 10000);
 
   // Run every 12 hours (12 * 60 * 60 * 1000 ms)
   const TWELVE_HOURS = 12 * 60 * 60 * 1000;
   setInterval(() => {
-    checkAndSendExpiryNotifications().catch(() => {});
+    checkAndSendExpiryNotifications().catch((err) => {
+      console.error('Periodic 12h expiry check failed:', err.message);
+    });
   }, TWELVE_HOURS);
 }
 
@@ -91,3 +97,4 @@ module.exports = {
   checkAndSendExpiryNotifications,
   initExpiryScheduler,
 };
+

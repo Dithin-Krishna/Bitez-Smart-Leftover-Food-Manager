@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/recipe_model.dart';
+import 'offline_storage_service.dart';
 
 /// Multi-API Recipe Service:
 /// Blends recipes from:
@@ -64,8 +65,21 @@ class RecipeService {
         return b.usedIngredientCount.compareTo(a.usedIngredientCount);
       });
 
+      // Cache search results for offline access
+      final queryKey = queryClean.join(',').toLowerCase();
+      await OfflineStorageService.instance.cacheSearchResults(
+        queryKey,
+        combined.map((r) => r.toJson()).toList(),
+      );
+
       return combined;
     } catch (_) {
+      // Check offline cache
+      final queryKey = queryClean.join(',').toLowerCase();
+      final cached = OfflineStorageService.instance.getCachedSearchResults(queryKey);
+      if (cached != null && cached.isNotEmpty) {
+        return cached.map((j) => RecipeModel.fromJson(j)).toList();
+      }
       return _getFallbackRecipes(queryClean, cuisine: cuisine);
     }
   }
@@ -752,11 +766,17 @@ class RecipeService {
       final response = await http.get(url).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final Map<String, dynamic> json = jsonDecode(response.body);
-        return RecipeModel.fromDetailJson(json);
+        final recipe = RecipeModel.fromDetailJson(json);
+        await OfflineStorageService.instance.cacheRecipeDetail('$recipeId', recipe.toJson());
+        return recipe;
       } else {
+        final cached = OfflineStorageService.instance.getCachedRecipeDetail('$recipeId');
+        if (cached != null) return RecipeModel.fromJson(cached);
         return _getFallbackDetails(recipeId);
       }
     } catch (e) {
+      final cached = OfflineStorageService.instance.getCachedRecipeDetail('$recipeId');
+      if (cached != null) return RecipeModel.fromJson(cached);
       return _getFallbackDetails(recipeId);
     }
   }

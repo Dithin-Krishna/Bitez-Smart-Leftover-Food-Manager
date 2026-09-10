@@ -14,6 +14,7 @@ class RecognizedFoodItem {
   int qty;
   bool isSelected;
   bool isValidated;
+  DateTime? expiresAt;
 
   RecognizedFoodItem({
     required this.label,
@@ -23,6 +24,7 @@ class RecognizedFoodItem {
     this.qty = 1,
     this.isSelected = true,
     this.isValidated = true,
+    this.expiresAt,
   });
 
   factory RecognizedFoodItem.fromJson(Map<String, dynamic> json) {
@@ -43,6 +45,7 @@ class RecognizedFoodItem {
       'emoji': emoji,
       'qty': qty,
       'section': section,
+      if (expiresAt != null) 'expiresAt': expiresAt!.toIso8601String(),
     };
   }
 }

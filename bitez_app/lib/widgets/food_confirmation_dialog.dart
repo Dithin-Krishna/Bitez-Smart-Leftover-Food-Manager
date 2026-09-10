@@ -4,21 +4,24 @@ import '../services/food_recognition_service.dart';
 
 /// Phase 5 – User Confirmation Dialog
 /// Allows users to review, modify quantities, edit food names, reject non-food predictions,
-/// and confirm items before saving to MongoDB Virtual Fridge (Phase 6).
+/// set custom expiration dates, and confirm items before saving to MongoDB Virtual Fridge (Phase 6).
 class FoodConfirmationDialog extends StatefulWidget {
-  final File imageFile;
+  final File? imageFile;
   final List<RecognizedFoodItem> detectedItems;
+  final String? title;
 
   const FoodConfirmationDialog({
     super.key,
-    required this.imageFile,
+    this.imageFile,
     required this.detectedItems,
+    this.title,
   });
 
   static Future<List<RecognizedFoodItem>?> show(
     BuildContext context, {
-    required File imageFile,
+    File? imageFile,
     required List<RecognizedFoodItem> detectedItems,
+    String? title,
   }) {
     return showDialog<List<RecognizedFoodItem>>(
       context: context,
@@ -26,6 +29,7 @@ class FoodConfirmationDialog extends StatefulWidget {
       builder: (context) => FoodConfirmationDialog(
         imageFile: imageFile,
         detectedItems: detectedItems,
+        title: title,
       ),
     );
   }
@@ -50,6 +54,7 @@ class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
         qty: item.qty,
         isSelected: item.isSelected,
         isValidated: item.isValidated,
+        expiresAt: item.expiresAt ?? DateTime.now().add(const Duration(days: 7)),
       );
     }).toList();
   }
@@ -65,9 +70,48 @@ class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
           qty: 1,
           isSelected: true,
           isValidated: true,
+          expiresAt: DateTime.now().add(const Duration(days: 7)),
         ),
       );
     });
+  }
+
+  Future<void> _pickExpiryDate(RecognizedFoodItem item) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initialDate = item.expiresAt != null && item.expiresAt!.isAfter(today)
+        ? item.expiresAt!
+        : today.add(const Duration(days: 7));
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 730)),
+      helpText: 'Set expiry date for ${item.label}',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFF2A4E7C),
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() => item.expiresAt = picked);
+    }
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'No date';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}';
   }
 
   @override
@@ -90,21 +134,33 @@ class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    widget.imageFile,
-                    width: 60,
-                    height: 60,
-                    fit: BoxFit.cover,
-                  ),
+                  child: widget.imageFile != null
+                      ? Image.file(
+                          widget.imageFile!,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A4E7C).withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF4A90C4), size: 30),
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'AI Food Recognition',
-                        style: TextStyle(
+                      Text(
+                        widget.title ?? 'AI Food Recognition',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -146,7 +202,7 @@ class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
                       itemBuilder: (context, index) {
                         final item = _items[index];
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                           decoration: BoxDecoration(
                             color: item.isSelected
                                 ? const Color(0xFF1E355E)
@@ -158,68 +214,122 @@ class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
                                   : Colors.white10,
                             ),
                           ),
-                          child: Row(
+                          child: Column(
                             children: [
-                              // Checkbox
-                              Checkbox(
-                                value: item.isSelected,
-                                activeColor: const Color(0xFF4A90C4),
-                                onChanged: (val) {
-                                  setState(() => item.isSelected = val ?? false);
-                                },
-                              ),
-                              // Emoji
-                              Text(
-                                item.emoji,
-                                style: const TextStyle(fontSize: 22),
-                              ),
-                              const SizedBox(width: 8),
-                              // Editable Label
-                              Expanded(
-                                child: TextFormField(
-                                  initialValue: item.label,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                  decoration: const InputDecoration(
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                  onChanged: (val) => item.label = val,
-                                ),
-                              ),
-                              // Qty Stepper
+                              // Main row: Checkbox, Emoji, Label, Qty, Delete
                               Row(
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.white70, size: 20),
-                                    onPressed: item.qty > 1
-                                        ? () => setState(() => item.qty--)
-                                        : null,
-                                  ),
-                                  Text(
-                                    '${item.qty}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
+                                  // Checkbox
+                                  SizedBox(
+                                    width: 36,
+                                    child: Checkbox(
+                                      value: item.isSelected,
+                                      activeColor: const Color(0xFF4A90C4),
+                                      onChanged: (val) {
+                                        setState(() => item.isSelected = val ?? false);
+                                      },
                                     ),
                                   ),
+                                  // Emoji
+                                  Text(
+                                    item.emoji,
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Editable Label
+                                  Expanded(
+                                    child: TextFormField(
+                                      initialValue: item.label,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      onChanged: (val) => item.label = val,
+                                    ),
+                                  ),
+                                  // Qty Stepper
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.white70, size: 20),
+                                        onPressed: item.qty > 1
+                                            ? () => setState(() => item.qty--)
+                                            : null,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                      ),
+                                      Text(
+                                        '${item.qty}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 20),
+                                        onPressed: () => setState(() => item.qty++),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                      ),
+                                    ],
+                                  ),
+                                  // Delete button
                                   IconButton(
-                                    icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 20),
-                                    onPressed: () => setState(() => item.qty++),
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                    onPressed: () {
+                                      setState(() => _items.removeAt(index));
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                   ),
                                 ],
                               ),
-                              // Delete button
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                onPressed: () {
-                                  setState(() => _items.removeAt(index));
-                                },
+                              // Expiry date row
+                              Padding(
+                                padding: const EdgeInsets.only(left: 36, bottom: 4),
+                                child: InkWell(
+                                  onTap: () => _pickExpiryDate(item),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today,
+                                          size: 14,
+                                          color: Color(0xFF4A90C4),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Expires: ${_formatDate(item.expiresAt)}',
+                                          style: const TextStyle(
+                                            color: Color(0xFF4A90C4),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.edit,
+                                          size: 12,
+                                          color: Color(0xFF4A90C4),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
