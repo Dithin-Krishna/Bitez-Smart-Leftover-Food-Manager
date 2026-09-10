@@ -11,6 +11,8 @@ import '../widgets/food_confirmation_dialog.dart';
 import 'chat_screen.dart';
 import 'grocery_list_screen.dart';
 import 'expiry_tracker_screen.dart';
+import 'barcode_scanner_screen.dart';
+import '../widgets/sync_conflict_banner.dart';
 
 /// Realistic top-bottom double-door fridge.
 /// • TOP  = Freezer door – hinge LEFT, handle RIGHT, opens leftward (rotateY)
@@ -219,9 +221,14 @@ class _FridgeScreenState extends State<FridgeScreen>
     final token = context.read<AuthProvider>().token;
     if (id.isEmpty || token == null) return; // offline / demo item
     try {
-      await FridgeService.instance.updateQty(token: token, id: id, delta: d);
+      await FridgeService.instance.updateQty(
+        token: token,
+        id: id,
+        delta: d,
+        itemLabel: item['label']?.toString(),
+      );
     } catch (_) {
-      // Silently revert on failure
+      // Revert if even offline queue fails
       if (mounted) setState(() => item['qty'] = (item['qty'] as int) - d);
     }
   }
@@ -314,6 +321,7 @@ class _FridgeScreenState extends State<FridgeScreen>
         child: Stack(children: [
           Column(children: [
             _topBar(),
+            const SyncConflictBanner(),
             Expanded(child: _fridgeUnit()),
             _totalBar(),
           ]),
@@ -441,6 +449,25 @@ class _FridgeScreenState extends State<FridgeScreen>
                 context,
                 MaterialPageRoute(builder: (_) => const ChatScreen()),
               );
+            },
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 18),
+            tooltip: 'Scan Barcode',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: () async {
+              final added = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+              );
+              if (added == true) {
+                _loadItems();
+              }
             },
           ),
           if (_topOpen || _botOpen) ...[

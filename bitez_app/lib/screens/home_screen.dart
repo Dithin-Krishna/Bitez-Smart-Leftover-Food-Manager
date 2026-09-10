@@ -17,6 +17,8 @@ import 'saved_recipes_screen.dart';
 import 'chat_screen.dart';
 import 'grocery_list_screen.dart';
 import 'expiry_tracker_screen.dart';
+import 'analytics_dashboard_screen.dart';
+import 'meal_planner_screen.dart';
 import '../providers/expiry_provider.dart';
 
 /// Main home screen: logo bar, food photo / text input, fridge shortcut,
@@ -106,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'qty': item.qty,
             'color': 0xFF2A4E7C,
             'section': item.section,
+            if (item.expiresAt != null) 'expiresAt': item.expiresAt!.toIso8601String(),
           }).toList();
 
           await FridgeService.instance.addBulkItems(token: token, items: payload);
@@ -880,6 +883,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(builder: (_) => const ExpiryTrackerScreen()),
                     );
                   },
+                );
+              },
+            ),
+
+            ListTile(
+              leading: const Text('🌱', style: TextStyle(fontSize: 20)),
+              title: Text('Waste & Savings Analytics', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AnalyticsDashboardScreen()),
+                );
+              },
+            ),
+
+            ListTile(
+              leading: const Text('📅', style: TextStyle(fontSize: 20)),
+              title: Text('Weekly Meal Planner', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MealPlannerScreen()),
                 );
               },
             ),

@@ -56,6 +56,72 @@ router.post('/', async (req, res, next) => {
 });
 
 /**
+ * POST /api/grocery/bulk
+ * Bulk-add items to grocery list with deduplication.
+ * If an unbought item with the same label already exists, bump its qty.
+ * Body: { items: [ { label, emoji?, qty?, category?, section? }, ... ] }
+ */
+router.post('/bulk', async (req, res, next) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'items array is required.' });
+    }
+
+    // Fetch existing unbought items for deduplication
+    const existingItems = await GroceryItem.find({ userId: req.user.id, isBought: false });
+    const existingMap = new Map();
+    for (const item of existingItems) {
+      existingMap.set(item.label.toLowerCase().trim(), item);
+    }
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    for (const entry of items) {
+      if (!entry.label || typeof entry.label !== 'string') continue;
+
+      const cleanLabel = entry.label.trim();
+      const lowerLabel = cleanLabel.toLowerCase();
+      const enriched = validateAndEnrich(cleanLabel);
+
+      const existing = existingMap.get(lowerLabel);
+
+      if (existing) {
+        // Bump quantity of existing item
+        existing.qty += (entry.qty || 1);
+        await existing.save();
+        updatedCount++;
+      } else {
+        const newItem = await GroceryItem.create({
+          userId: req.user.id,
+          label: cleanLabel,
+          emoji: entry.emoji || (enriched ? enriched.emoji : '🛒'),
+          qty: entry.qty || 1,
+          category: entry.category || (enriched ? enriched.category : 'Produce'),
+          section: entry.section || (enriched ? enriched.defaultSection : 'veggies'),
+          isBought: false,
+          isAiSuggested: false,
+          reason: entry.reason || 'Added from recipe',
+        });
+        existingMap.set(lowerLabel, newItem);
+        addedCount++;
+      }
+    }
+
+    const updatedList = await GroceryItem.find({ userId: req.user.id }).sort({ isBought: 1, createdAt: -1 });
+    res.status(201).json({
+      success: true,
+      addedCount,
+      updatedCount,
+      items: updatedList,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/grocery/generate
  * Analyzes items in the user's Virtual Fridge and calls Gemini AI to generate smart restock suggestions.
  */

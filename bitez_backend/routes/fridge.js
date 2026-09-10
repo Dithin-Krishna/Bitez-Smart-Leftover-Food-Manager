@@ -1,6 +1,7 @@
 const router     = require('express').Router();
 const FridgeItem = require('../models/FridgeItem');
 const GroceryItem = require('../models/GroceryItem');
+const CookLog    = require('../models/CookLog');
 const auth       = require('../middleware/authMiddleware');
 
 // All fridge routes require authentication
@@ -283,6 +284,111 @@ router.post('/trigger-expiry-check', async (req, res, next) => {
   try {
     const result = await checkAndSendExpiryNotifications();
     res.json({ success: true, message: 'Expiry check triggered manually.', result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/fridge/deduct
+// Batch-deduct ingredient quantities after cooking a recipe.
+// Body: { deductions: [ { itemId, quantityUsed }, ... ] }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/deduct', async (req, res, next) => {
+  try {
+    const { deductions, recipeId, recipeTitle } = req.body;
+    if (!Array.isArray(deductions) || deductions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'deductions array is required. Each entry: { itemId, quantityUsed }.',
+      });
+    }
+
+    const results = [];
+
+    for (const { itemId, quantityUsed } of deductions) {
+      if (!itemId || !quantityUsed || quantityUsed <= 0) continue;
+
+      const item = await FridgeItem.findOne({
+        _id: itemId,
+        userId: req.user.id,
+      });
+
+      if (!item) continue;
+
+      const previousQty = item.qty;
+      const actualDeduct = Math.min(quantityUsed, previousQty);
+      const newQty = previousQty - actualDeduct;
+
+      if (newQty <= 0) {
+        // Remove the item entirely (matches existing delete pattern)
+        await FridgeItem.findByIdAndDelete(item._id);
+        await autoCheckLowStockGrocery(req.user.id, item, 'Used up while cooking');
+        results.push({
+          itemId: item._id.toString(),
+          label: item.label,
+          previousQty,
+          newQty: 0,
+          removed: true,
+          section: item.section || 'pantry',
+          quantityUsed: actualDeduct,
+        });
+      } else {
+        item.qty = newQty;
+        await item.save();
+        await autoCheckLowStockGrocery(req.user.id, item);
+        results.push({
+          itemId: item._id.toString(),
+          label: item.label,
+          previousQty,
+          newQty,
+          removed: false,
+          section: item.section || 'pantry',
+          quantityUsed: actualDeduct,
+        });
+      }
+    }
+
+    // Log the cooking & deduction event for Analytics Dashboard
+    let cookLog = null;
+    if (results.length > 0) {
+      const detailedDeductions = results.map(r => ({
+        itemId: r.itemId,
+        label: r.label,
+        quantityUsed: r.quantityUsed || 1,
+        section: r.section || 'pantry',
+        estimatedCost: 1.50,
+      }));
+
+      const totalItemsSaved = detailedDeductions.reduce((sum, d) => sum + (Number(d.quantityUsed) || 1), 0);
+      const estimatedMoneySaved = Math.round(totalItemsSaved * 1.50 * 100) / 100;
+
+      try {
+        cookLog = await CookLog.create({
+          userId: req.user.id,
+          recipeId: recipeId || null,
+          recipeTitle: recipeTitle || 'Cooked Recipe',
+          deductions: detailedDeductions,
+          totalItemsSaved,
+          estimatedMoneySaved,
+          cookedAt: new Date(),
+        });
+      } catch (logErr) {
+        console.error('Failed to log cook event:', logErr);
+      }
+    }
+
+    res.json({
+      success: true,
+      deductedCount: results.length,
+      deducted: results,
+      cookLog: cookLog ? {
+        id: cookLog._id,
+        recipeTitle: cookLog.recipeTitle,
+        totalItemsSaved: cookLog.totalItemsSaved,
+        estimatedMoneySaved: cookLog.estimatedMoneySaved,
+      } : null,
+    });
   } catch (err) {
     next(err);
   }

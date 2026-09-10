@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const jwt    = require('jsonwebtoken');
 const User   = require('../models/User');
+const { authLimiter } = require('../middleware/rateLimiters');
 
 // ── Helper: sign a JWT for a user ─────────────────────────────────────────────
 const signToken = (userId) =>
@@ -23,7 +24,7 @@ const safeUser = (user) => ({
 // POST /api/auth/register
 // Body: { name, email, password, age, gender, phone }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/register', async (req, res, next) => {
+router.post('/register', authLimiter, async (req, res, next) => {
   try {
     const { name, email, password, age, gender, phone } = req.body;
 
@@ -77,7 +78,7 @@ router.post('/register', async (req, res, next) => {
 // POST /api/auth/login
 // Body: { email, password }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/login', async (req, res, next) => {
+router.post('/login', authLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -148,7 +149,7 @@ router.post('/refresh', async (req, res, next) => {
 const crypto = require('crypto');
 const sendEmail = require('../utils/email');
 
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', authLimiter, async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) {

@@ -14,6 +14,10 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// ── Production Rate Limiting ──────────────────────────────────────────────────
+const { apiLimiter } = require('./middleware/rateLimiters');
+app.use('/api', apiLimiter);
+
 // ── MongoDB Atlas Connection ───────────────────────────────────────────────────
 const connectDB = async () => {
   try {
@@ -33,9 +37,11 @@ app.use('/api/auth',    require('./routes/auth'));
 app.use('/api/fridge',  require('./routes/fridge'));
 app.use('/api/recipes', require('./routes/recipes'));
 app.use('/api/user',    require('./routes/user'));
-app.use('/api/chat',    require('./routes/chat'));
-app.use('/api/vision',  require('./routes/vision'));
-app.use('/api/grocery', require('./routes/grocery'));
+app.use('/api/chat',      require('./routes/chat'));
+app.use('/api/vision',    require('./routes/vision'));
+app.use('/api/grocery',      require('./routes/grocery'));
+app.use('/api/analytics',    require('./routes/analytics'));
+app.use('/api/meal-planner', require('./routes/mealPlanner'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

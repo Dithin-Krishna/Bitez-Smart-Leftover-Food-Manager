@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/saved_recipes_provider.dart';
+import '../services/fridge_service.dart';
+import '../services/grocery_service.dart';
 import '../services/recipe_service.dart';
+import '../services/meal_planner_service.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final RecipeModel recipe;
@@ -23,12 +27,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
   final Set<int> _completedSteps = {};
   final Set<String> _checkedIngredients = {};
 
+  // ── Feature 1: Fridge matching state ────────────────────────────────────────
+  List<Map<String, dynamic>> _fridgeItems = [];
+  bool _fridgeLoaded = false;
+  bool _deducting = false;
+
+  // ── Feature 2: Grocery export state ─────────────────────────────────────────
+  bool _addingToGrocery = false;
+
   @override
   void initState() {
     super.initState();
     _detail = widget.recipe;
     _tabController = TabController(length: 3, vsync: this);
     _fetchDetails();
+    _loadFridgeItems();
   }
 
   @override
@@ -56,6 +69,197 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
     }
   }
 
+  // ── Feature 1: Load fridge inventory for matching ──────────────────────────
+  Future<void> _loadFridgeItems() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      final items = await FridgeService.instance.getAllItems(token: token);
+      if (mounted) {
+        setState(() {
+          _fridgeItems = items;
+          _fridgeLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _fridgeLoaded = true);
+    }
+  }
+
+  /// Matches recipe usedIngredients to fridge items via fuzzy label comparison.
+  /// Returns list of { fridgeItem, matchedIngredientName }.
+  List<Map<String, dynamic>> _getMatchedFridgeItems() {
+    if (_fridgeItems.isEmpty) return [];
+
+    final cleanUsed = _detail.usedIngredients
+        .where((ing) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food']
+            .contains(ing.toLowerCase().trim()))
+        .toList();
+
+    final matches = <Map<String, dynamic>>[];
+    final usedFridgeIds = <String>{};
+
+    for (final ingredient in cleanUsed) {
+      final ingLower = ingredient.toLowerCase().trim();
+
+      for (final fridgeItem in _fridgeItems) {
+        final fridgeId = fridgeItem['_id']?.toString() ?? '';
+        if (usedFridgeIds.contains(fridgeId)) continue;
+
+        final fridgeLabel = (fridgeItem['label']?.toString() ?? '').toLowerCase().trim();
+        if (fridgeLabel.isEmpty) continue;
+
+        // Fuzzy match: fridge label appears in recipe ingredient string, or vice versa
+        if (ingLower.contains(fridgeLabel) || fridgeLabel.contains(ingLower)) {
+          usedFridgeIds.add(fridgeId);
+          matches.add({
+            'fridgeItem': fridgeItem,
+            'ingredientName': ingredient,
+          });
+          break;
+        }
+      }
+    }
+
+    return matches;
+  }
+
+  // ── Feature 1: Show deduction confirmation dialog ──────────────────────────
+  Future<void> _showDeductionDialog() async {
+    final matches = _getMatchedFridgeItems();
+    if (matches.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No matching fridge items found for this recipe.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final result = await showDialog<List<Map<String, dynamic>>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _CookDeductionDialog(matches: matches),
+    );
+
+    if (result == null || result.isEmpty || !mounted) return;
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    setState(() => _deducting = true);
+
+    try {
+      await FridgeService.instance.deductItems(
+        token: token,
+        deductions: result,
+        recipeTitle: widget.recipe.title,
+        recipeId: widget.recipe.id.toString(),
+      );
+
+      // Refresh local fridge items
+      await _loadFridgeItems();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Deducted ${result.length} ingredient${result.length == 1 ? "" : "s"} from your fridge!'),
+            backgroundColor: const Color(0xFF2A4E7C),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to deduct items: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deducting = false);
+    }
+  }
+
+  // ── Feature 2: Add missing ingredients to grocery list ─────────────────────
+  Future<void> _addMissingToGrocery() async {
+    final missing = _detail.missedIngredients;
+    if (missing.isEmpty) return;
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    setState(() => _addingToGrocery = true);
+
+    try {
+      // Extract clean ingredient names for grocery list
+      final items = missing.map((ing) {
+        // Try to extract just the ingredient name from strings like "2 cups flour"
+        final cleanName = _extractIngredientName(ing);
+        return {'label': cleanName, 'qty': 1};
+      }).toList();
+
+      final response = await GroceryService.instance.addBulkItems(
+        token: token,
+        items: items,
+      );
+
+      if (mounted) {
+        final addedCount = response['addedCount'] ?? 0;
+        final updatedCount = response['updatedCount'] ?? 0;
+        String message;
+        if (addedCount > 0 && updatedCount > 0) {
+          message = '🛒 Added $addedCount new + updated $updatedCount existing item(s) in Grocery List!';
+        } else if (updatedCount > 0) {
+          message = '🛒 Updated $updatedCount existing item(s) in Grocery List!';
+        } else {
+          message = '🛒 Added $addedCount item(s) to Grocery List!';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add to grocery list: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _addingToGrocery = false);
+    }
+  }
+
+  /// Extract core ingredient name from recipe strings like "2 large eggs" → "Eggs"
+  String _extractIngredientName(String raw) {
+    // Remove leading quantities and measurements
+    String cleaned = raw.replaceAll(RegExp(r'^[\d/.\s]+'), '');
+    // Remove common measurement words
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^(cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|grams?|kg|ml|liters?|large|medium|small|pieces?|slices?|cloves?|cans?|bunch|pinch|dash)\s+', caseSensitive: false),
+      '',
+    );
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\(.*?\)\s*'), '');
+    cleaned = cleaned.trim();
+    if (cleaned.isEmpty) cleaned = raw.trim();
+    // Capitalize first letter
+    if (cleaned.isNotEmpty) {
+      cleaned = cleaned[0].toUpperCase() + cleaned.substring(1);
+    }
+    return cleaned;
+  }
+
   void _showCookingModeModal() {
     if (_detail.instructions.isEmpty) return;
 
@@ -67,6 +271,150 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
     );
   }
 
+  Future<void> _showPinToMealPlanDialog() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    String selectedDay = 'monday';
+    String mealType = 'dinner';
+
+    final days = {
+      'monday': 'Monday',
+      'tuesday': 'Tuesday',
+      'wednesday': 'Wednesday',
+      'thursday': 'Thursday',
+      'friday': 'Friday',
+      'saturday': 'Saturday',
+      'sunday': 'Sunday',
+    };
+
+    final pinned = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: const Color(0xFF16253D),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.calendar_month_rounded, color: Color(0xFF4A90C4)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Pin to Meal Plan',
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add "${_detail.title}" to your weekly schedule:',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              const Text('Day of the Week', style: TextStyle(color: Colors.white60, fontSize: 12)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedDay,
+                    dropdownColor: const Color(0xFF16253D),
+                    isExpanded: true,
+                    items: days.entries
+                        .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(color: Colors.white))))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setDlgState(() => selectedDay = val);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Meal Type', style: TextStyle(color: Colors.white60, fontSize: 12)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: mealType,
+                    dropdownColor: const Color(0xFF16253D),
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: 'breakfast', child: Text('🥞 Breakfast', style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'lunch',     child: Text('🥪 Lunch',     style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'dinner',    child: Text('🍽️ Dinner',    style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'snack',     child: Text('🍎 Snack',     style: TextStyle(color: Colors.white))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setDlgState(() => mealType = val);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2A4E7C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                try {
+                  final allIngredients = [
+                    ..._detail.usedIngredients,
+                    ..._detail.missedIngredients,
+                  ];
+                  await MealPlannerService.instance.pinRecipe(
+                    token: token,
+                    dayOfWeek: selectedDay,
+                    recipeTitle: _detail.title,
+                    recipeId: _detail.id.toString(),
+                    imageUrl: _detail.image,
+                    ingredients: allIngredients,
+                    cookTime: _detail.readyInMinutes ?? 20,
+                    mealType: mealType,
+                    servings: _detail.servings ?? 2,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } catch (_) {
+                  if (ctx.mounted) Navigator.pop(ctx, false);
+                }
+              },
+              child: const Text('Pin Recipe'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (pinned == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📌 Pinned to ${days[selectedDay]}!'),
+          backgroundColor: const Color(0xFF2A4E7C),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -75,6 +423,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 
     final savedProvider = context.watch<SavedRecipesProvider>();
     final isSaved = savedProvider.isSaved(_detail.id);
+
+    final hasMatchedItems = _fridgeLoaded && _getMatchedFridgeItems().isNotEmpty;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -97,6 +447,22 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
               onPressed: () => Navigator.pop(context),
             ),
             actions: [
+              IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                tooltip: 'Pin to Meal Plan',
+                onPressed: _showPinToMealPlanDialog,
+              ),
               IconButton(
                 icon: Container(
                   padding: const EdgeInsets.all(8),
@@ -260,7 +626,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
         ],
       ),
 
-      // Floating Cooking Mode Action Bar
+      // ── Bottom Action Bar (Cooking Mode + I Cooked This!) ─────────────────
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -274,19 +640,52 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
           ],
         ),
         child: SafeArea(
-          child: ElevatedButton.icon(
-            onPressed: _showCookingModeModal,
-            icon: const Icon(Icons.play_circle_fill),
-            label: const Text(
-              'Start Cooking Mode',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
+          child: Row(
+            children: [
+              // "I Cooked This!" button — only when matched fridge items exist
+              if (hasMatchedItems) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _deducting ? null : _showDeductionDialog,
+                    icon: _deducting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('🍳', style: TextStyle(fontSize: 18)),
+                    label: Text(
+                      _deducting ? 'Updating…' : 'I Cooked This!',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: BorderSide(color: primary, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              // "Start Cooking Mode" button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _showCookingModeModal,
+                  icon: const Icon(Icons.play_circle_fill),
+                  label: const Text(
+                    'Start Cooking Mode',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -369,13 +768,44 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 
         if (_detail.missedIngredients.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Missing Ingredients (+To Buy)',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Colors.orange.shade800,
-            ),
+          // ── Feature 2: Missing section header + "Add to Grocery" button ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Missing Ingredients (+To Buy)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _addingToGrocery ? null : _addMissingToGrocery,
+                icon: _addingToGrocery
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.add_shopping_cart, size: 16, color: Colors.green.shade700),
+                label: Text(
+                  _addingToGrocery ? 'Adding…' : 'Add All to Grocery',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _addingToGrocery ? Colors.grey : Colors.green.shade700,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           ..._detail.missedIngredients.map((ing) {
@@ -638,6 +1068,232 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
       color: primary.withValues(alpha: 0.2),
       child: Center(
         child: Icon(Icons.restaurant, size: 64, color: primary),
+      ),
+    );
+  }
+}
+
+// ── Feature 1: Cook Deduction Confirmation Dialog ────────────────────────────
+class _CookDeductionDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> matches;
+
+  const _CookDeductionDialog({required this.matches});
+
+  @override
+  State<_CookDeductionDialog> createState() => _CookDeductionDialogState();
+}
+
+class _CookDeductionDialogState extends State<_CookDeductionDialog> {
+  late List<bool> _selected;
+  late List<int> _quantities;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List.filled(widget.matches.length, true);
+    _quantities = widget.matches.map((m) {
+      final qty = (m['fridgeItem']['qty'] as num?)?.toInt() ?? 1;
+      // Default deduction: 1 (or available qty if less)
+      return qty >= 1 ? 1 : qty;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primary = theme.colorScheme.primary;
+
+    final selectedCount = _selected.where((s) => s).length;
+
+    return Dialog(
+      backgroundColor: isDark ? const Color(0xFF0F1A2E) : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 550, maxWidth: 500),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text('🍳', style: TextStyle(fontSize: 24)),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'I Cooked This!',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Deduct used ingredients from your fridge',
+                        style: TextStyle(
+                          color: isDark ? Colors.white60 : Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, color: isDark ? Colors.white70 : Colors.grey),
+                  onPressed: () => Navigator.pop(context, null),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Divider(color: isDark ? Colors.white24 : Colors.grey.shade300, height: 1),
+            const SizedBox(height: 12),
+
+            // Item list
+            Expanded(
+              child: ListView.separated(
+                itemCount: widget.matches.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final match = widget.matches[index];
+                  final fridgeItem = match['fridgeItem'] as Map<String, dynamic>;
+                  final ingredientName = match['ingredientName'] as String;
+                  final emoji = fridgeItem['emoji']?.toString() ?? '🥗';
+                  final label = fridgeItem['label']?.toString() ?? ingredientName;
+                  final availableQty = (fridgeItem['qty'] as num?)?.toInt() ?? 1;
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _selected[index]
+                          ? primary.withValues(alpha: isDark ? 0.15 : 0.06)
+                          : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.grey.shade50),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _selected[index]
+                            ? primary.withValues(alpha: 0.4)
+                            : (isDark ? Colors.white10 : Colors.grey.shade200),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: _selected[index],
+                          activeColor: primary,
+                          onChanged: (val) {
+                            setState(() => _selected[index] = val ?? false);
+                          },
+                        ),
+                        Text(emoji, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              Text(
+                                'Available: $availableQty',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isDark ? Colors.white54 : Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Qty stepper
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.remove_circle_outline,
+                                  color: isDark ? Colors.white70 : Colors.grey.shade700, size: 20),
+                              onPressed: _quantities[index] > 1
+                                  ? () => setState(() => _quantities[index]--)
+                                  : null,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            ),
+                            SizedBox(
+                              width: 24,
+                              child: Text(
+                                '${_quantities[index]}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.add_circle_outline,
+                                  color: isDark ? Colors.white70 : Colors.grey.shade700, size: 20),
+                              onPressed: _quantities[index] < availableQty
+                                  ? () => setState(() => _quantities[index]++)
+                                  : null,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Confirm button
+            ElevatedButton.icon(
+              onPressed: selectedCount == 0
+                  ? null
+                  : () {
+                      final deductions = <Map<String, dynamic>>[];
+                      for (int i = 0; i < widget.matches.length; i++) {
+                        if (!_selected[i]) continue;
+                        final fridgeItem = widget.matches[i]['fridgeItem'] as Map<String, dynamic>;
+                        deductions.add({
+                          'itemId': fridgeItem['_id']?.toString() ?? '',
+                          'quantityUsed': _quantities[i],
+                        });
+                      }
+                      Navigator.pop(context, deductions);
+                    },
+              icon: const Text('✅', style: TextStyle(fontSize: 16)),
+              label: Text(
+                'Deduct $selectedCount Ingredient${selectedCount == 1 ? "" : "s"}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

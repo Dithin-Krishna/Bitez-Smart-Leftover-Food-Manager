@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
+const { geminiLimiter } = require('../middleware/rateLimiters');
 const FridgeItem = require('../models/FridgeItem');
 const User = require('../models/User');
 const ChatMessage = require('../models/ChatMessage');
@@ -79,7 +80,7 @@ router.delete('/message/:id', authMiddleware, async (req, res, next) => {
  * Chat endpoint for Chef Bitez AI Assistant.
  * Expects: { message: string, history?: Array<{role: 'user'|'model', text: string}> }
  */
-router.post('/send', authMiddleware, async (req, res, next) => {
+router.post('/send', authMiddleware, geminiLimiter, async (req, res, next) => {
   try {
     const { message, history = [] } = req.body;
 

@@ -7,8 +7,16 @@ import 'providers/chat_provider.dart';
 import 'providers/expiry_provider.dart';
 import 'screens/login_intro_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/offline_storage_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await OfflineStorageService.instance.init();
+  } catch (e) {
+    debugPrint('Failed to initialize offline storage: $e');
+  }
+
   runApp(
     MultiProvider(
       providers: [

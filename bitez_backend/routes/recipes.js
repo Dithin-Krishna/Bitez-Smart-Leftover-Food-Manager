@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const Recipe = require('../models/Recipe');
 const auth   = require('../middleware/authMiddleware');
+const { recipeLimiter } = require('../middleware/rateLimiters');
 
 // All recipe routes require authentication
 router.use(auth);
@@ -130,4 +131,93 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROXY ENDPOINTS (Rate-limited to protect external API quotas)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/recipes/proxy/spoonacular/search
+router.get('/proxy/spoonacular/search', recipeLimiter, async (req, res, next) => {
+  try {
+    const apiKey = process.env.SPOONACULAR_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        success: false,
+        message: 'Spoonacular API key is not configured on the server.',
+      });
+    }
+
+    const { query, includeIngredients, cuisine, number = 10 } = req.query;
+    const url = new URL('https://api.spoonacular.com/recipes/complexSearch');
+    if (query) url.searchParams.set('query', query);
+    if (includeIngredients) url.searchParams.set('includeIngredients', includeIngredients);
+    if (cuisine) url.searchParams.set('cuisine', cuisine);
+    url.searchParams.set('sort', 'min-missing-ingredients');
+    url.searchParams.set('fillIngredients', 'true');
+    url.searchParams.set('addRecipeInformation', 'true');
+    url.searchParams.set('ignorePantry', 'true');
+    url.searchParams.set('number', String(Math.min(Number(number) || 10, 25)));
+    url.searchParams.set('apiKey', apiKey);
+
+    const apiRes = await fetch(url.toString());
+    const data = await apiRes.json();
+    return res.status(apiRes.status).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/recipes/proxy/spoonacular/:id
+router.get('/proxy/spoonacular/:id', recipeLimiter, async (req, res, next) => {
+  try {
+    const apiKey = process.env.SPOONACULAR_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        success: false,
+        message: 'Spoonacular API key is not configured on the server.',
+      });
+    }
+
+    const { id } = req.params;
+    const url = `https://api.spoonacular.com/recipes/${id}/information?includeInstructions=true&apiKey=${apiKey}`;
+    const apiRes = await fetch(url);
+    const data = await apiRes.json();
+    return res.status(apiRes.status).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/recipes/proxy/mealdb/filter
+router.get('/proxy/mealdb/filter', recipeLimiter, async (req, res, next) => {
+  try {
+    const { i } = req.query;
+    if (!i) {
+      return res.status(400).json({ success: false, message: 'Ingredient query param i is required.' });
+    }
+    const url = `https://www.themealdb.com/api/json/v1/1/filter.php?i=${encodeURIComponent(i)}`;
+    const apiRes = await fetch(url);
+    const data = await apiRes.json();
+    return res.status(apiRes.status).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/recipes/proxy/mealdb/lookup
+router.get('/proxy/mealdb/lookup', recipeLimiter, async (req, res, next) => {
+  try {
+    const { i } = req.query;
+    if (!i) {
+      return res.status(400).json({ success: false, message: 'Meal id param i is required.' });
+    }
+    const url = `https://www.themealdb.com/api/json/v1/1/lookup.php?i=${encodeURIComponent(i)}`;
+    const apiRes = await fetch(url);
+    const data = await apiRes.json();
+    return res.status(apiRes.status).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
+
