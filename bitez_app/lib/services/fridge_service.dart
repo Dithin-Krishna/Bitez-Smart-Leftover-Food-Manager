@@ -169,7 +169,7 @@ class FridgeService {
 
   // ── PATCH /api/fridge/deduct ────────────────────────────────────────────────
   /// Batch-deduct ingredient quantities after cooking a recipe.
-  /// Each entry: { 'itemId': String, 'quantityUsed': int }
+  /// Each entry: { 'itemId': String, 'label': String, 'quantityUsed': int }
   Future<Map<String, dynamic>> deductItems({
     required String token,
     required List<Map<String, dynamic>> deductions,
@@ -183,31 +183,80 @@ class FridgeService {
       'recipeId': ?recipeId,
     };
 
+    // Immediately update local cache with deductions and removals
+    for (final d in deductions) {
+      final itemId = d['itemId']?.toString() ?? '';
+      final label = d['label']?.toString() ?? '';
+      final qtyUsed = (d['quantityUsed'] as num?)?.toInt() ?? 1;
+      _deductFromLocalCache(id: itemId, label: label, qtyUsed: qtyUsed);
+    }
+
     try {
       final result = await ApiService.instance.patch(
         '/api/fridge/deduct',
         payload,
         token: token,
       );
-      // Update local cache with deductions
-      for (final d in deductions) {
-        final itemId = d['itemId']?.toString() ?? '';
-        final qtyUsed = (d['quantityUsed'] as num?)?.toInt() ?? 1;
-        _updateLocalCacheQtyDelta(itemId, -qtyUsed);
-      }
       return result;
     } catch (e) {
-      // Offline: Apply deductions locally and queue sync
-      for (final d in deductions) {
-        final itemId = d['itemId']?.toString() ?? '';
-        final qtyUsed = (d['quantityUsed'] as num?)?.toInt() ?? 1;
-        _updateLocalCacheQtyDelta(itemId, -qtyUsed);
-      }
+      // Offline / network fallback: queue mutation
+      debugPrint('FridgeService.deductItems: Server unreachable ($e). Changes applied locally and queued.');
       await SyncService.instance.queueMutation(
         type: SyncOpType.deductFridgeItems,
         payload: payload,
       );
       return {'success': true, 'offline': true};
+    }
+  }
+
+  // ── PATCH /api/fridge/:id/donate ───────────────────────────────────────────
+  Future<Map<String, dynamic>> toggleDonation({
+    required String token,
+    String? id,
+    String? itemId,
+    required bool isDonation,
+    String? notes,
+    String? donationStatus,
+    String? itemLabel,
+  }) async {
+    final effectiveId = (id ?? itemId ?? '').trim();
+    SyncService.instance.setAuthToken(token);
+    final payload = {
+      'isDonation': isDonation,
+      'donationStatus': donationStatus ?? (isDonation ? 'pledged' : 'none'),
+      'notes': ?notes,
+      if (itemLabel != null) 'label': itemLabel,
+    };
+
+    if (effectiveId.isNotEmpty) {
+      _updateLocalCacheDonation(effectiveId, isDonation, notes);
+    }
+
+    try {
+      final json = await ApiService.instance.patch(
+        '/api/fridge/$effectiveId/donate',
+        payload,
+        token: token,
+      );
+      return Map<String, dynamic>.from(json['item'] as Map);
+    } catch (e) {
+      debugPrint('FridgeService.toggleDonation: Server unreachable ($e). Saved locally.');
+      return {'_id': effectiveId, 'isDonation': isDonation, 'donationStatus': isDonation ? 'pledged' : 'none'};
+    }
+  }
+
+  // ── GET /api/fridge/donations ──────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getDonationItems(String token) async {
+    if (token.isNotEmpty) {
+      SyncService.instance.setAuthToken(token);
+    }
+    try {
+      final json = await ApiService.instance.get('/api/fridge/donations', token: token);
+      final items = json['items'] as List<dynamic>? ?? [];
+      return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (e) {
+      final flat = OfflineStorageService.instance.getCachedFlatFridge() ?? [];
+      return flat.where((i) => i['isDonation'] == true || i['donationStatus'] == 'pledged').toList();
     }
   }
 
@@ -297,5 +346,78 @@ class FridgeService {
 
     OfflineStorageService.instance.cacheFridgeData(grouped: grouped, items: flat);
     return finalQty;
+  }
+
+  void _deductFromLocalCache({required String id, required String label, required int qtyUsed}) {
+    final grouped = OfflineStorageService.instance.getCachedGroupedFridge() ?? {};
+    final flat = OfflineStorageService.instance.getCachedFlatFridge() ?? [];
+
+    final labelLower = label.trim().toLowerCase();
+
+    bool matchesItem(Map<String, dynamic> item) {
+      final itemId = (item['_id'] ?? item['id'])?.toString() ?? '';
+      if (id.isNotEmpty && itemId == id) return true;
+      if (labelLower.isNotEmpty) {
+        final itemLabel = (item['label']?.toString() ?? '').trim().toLowerCase();
+        if (itemLabel == labelLower) return true;
+      }
+      return false;
+    }
+
+    // Process grouped
+    for (final list in grouped.values) {
+      for (int i = list.length - 1; i >= 0; i--) {
+        final item = list[i];
+        if (matchesItem(item)) {
+          final current = (item['qty'] as num?)?.toInt() ?? 1;
+          final finalQty = current - qtyUsed;
+          if (finalQty <= 0) {
+            list.removeAt(i);
+          } else {
+            item['qty'] = finalQty;
+          }
+        }
+      }
+    }
+
+    // Process flat
+    for (int i = flat.length - 1; i >= 0; i--) {
+      final item = flat[i];
+      if (matchesItem(item)) {
+        final current = (item['qty'] as num?)?.toInt() ?? 1;
+        final finalQty = current - qtyUsed;
+        if (finalQty <= 0) {
+          flat.removeAt(i);
+        } else {
+          item['qty'] = finalQty;
+        }
+      }
+    }
+
+    OfflineStorageService.instance.cacheFridgeData(grouped: grouped, items: flat);
+  }
+
+  void _updateLocalCacheDonation(String id, bool isDonation, String? notes) {
+    final grouped = OfflineStorageService.instance.getCachedGroupedFridge() ?? {};
+    final flat = OfflineStorageService.instance.getCachedFlatFridge() ?? [];
+
+    for (final list in grouped.values) {
+      for (final item in list) {
+        if (item['_id'] == id || item['id'] == id) {
+          item['isDonation'] = isDonation;
+          item['donationStatus'] = isDonation ? 'pledged' : 'none';
+          if (notes != null) item['donationNotes'] = notes;
+        }
+      }
+    }
+    for (final item in flat) {
+      if (item['_id'] == id || item['id'] == id) {
+        item['isDonation'] = isDonation;
+        item['donationStatus'] = isDonation ? 'pledged' : 'none';
+        if (notes != null) item['donationNotes'] = notes;
+      }
+    }
+
+    OfflineStorageService.instance.cacheFridgeData(grouped: grouped, items: flat);
   }
 }

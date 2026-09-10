@@ -67,6 +67,22 @@ const fridgeItemSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    // Food donation fields
+    isDonation: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    donationStatus: {
+      type: String,
+      enum: ['none', 'pledged', 'donated'],
+      default: 'none',
+    },
+    donationNotes: {
+      type: String,
+      default: '',
+      trim: true,
+    },
   },
   { timestamps: true }
 );

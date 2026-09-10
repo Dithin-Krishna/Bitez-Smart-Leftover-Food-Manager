@@ -1,4 +1,5 @@
 const router     = require('express').Router();
+const mongoose   = require('mongoose');
 const FridgeItem = require('../models/FridgeItem');
 const GroceryItem = require('../models/GroceryItem');
 const CookLog    = require('../models/CookLog');
@@ -306,13 +307,24 @@ router.patch('/deduct', async (req, res, next) => {
 
     const results = [];
 
-    for (const { itemId, quantityUsed } of deductions) {
-      if (!itemId || !quantityUsed || quantityUsed <= 0) continue;
+    for (const { itemId, label, quantityUsed } of deductions) {
+      if ((!itemId && !label) || !quantityUsed || quantityUsed <= 0) continue;
 
-      const item = await FridgeItem.findOne({
-        _id: itemId,
-        userId: req.user.id,
-      });
+      let item = null;
+      if (itemId && mongoose.Types.ObjectId.isValid(itemId)) {
+        item = await FridgeItem.findOne({
+          _id: itemId,
+          userId: req.user.id,
+        });
+      }
+
+      // Fallback matching by label if itemId is missing, invalid ObjectId, or not found
+      if (!item && label) {
+        item = await FridgeItem.findOne({
+          userId: req.user.id,
+          label: { $regex: new RegExp(`^${label.trim()}$`, 'i') },
+        });
+      }
 
       if (!item) continue;
 
@@ -424,6 +436,71 @@ router.delete('/', async (req, res, next) => {
   try {
     const result = await FridgeItem.deleteMany({ userId: req.user.id });
     res.json({ success: true, message: `Cleared ${result.deletedCount} items from fridge.` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/fridge/donations
+// Returns all items marked for food donation for the logged-in user.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/donations', async (req, res, next) => {
+  try {
+    const items = await FridgeItem.find({
+      userId: req.user.id,
+      $or: [{ isDonation: true }, { donationStatus: 'pledged' }],
+    }).sort({ updatedAt: -1 });
+    res.json({ success: true, count: items.length, items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/fridge/:id/donate
+// Toggles or updates donation status for a fridge item.
+// Body: { isDonation: boolean, donationStatus?: 'none'|'pledged'|'donated', notes?: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id/donate', async (req, res, next) => {
+  try {
+    const { isDonation, donationStatus, notes } = req.body;
+    const update = {};
+
+    if (isDonation !== undefined) {
+      update.isDonation = Boolean(isDonation);
+      if (update.isDonation) {
+        update.donationStatus = donationStatus || 'pledged';
+      } else {
+        update.donationStatus = 'none';
+      }
+    } else if (donationStatus) {
+      update.donationStatus = donationStatus;
+      update.isDonation = donationStatus !== 'none';
+    }
+
+    if (notes !== undefined) {
+      update.donationNotes = String(notes).trim();
+    }
+
+    let item = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      item = await FridgeItem.findOneAndUpdate(
+        { _id: req.params.id, userId: req.user.id },
+        { $set: update },
+        { new: true }
+      );
+    }
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found.' });
+    }
+
+    res.json({
+      success: true,
+      message: update.isDonation ? 'Item pledged for donation ❤️' : 'Donation flag removed.',
+      item,
+    });
   } catch (err) {
     next(err);
   }

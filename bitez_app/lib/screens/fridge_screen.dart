@@ -12,6 +12,7 @@ import 'chat_screen.dart';
 import 'grocery_list_screen.dart';
 import 'expiry_tracker_screen.dart';
 import 'barcode_scanner_screen.dart';
+import 'donations_screen.dart';
 import '../widgets/sync_conflict_banner.dart';
 
 /// Realistic top-bottom double-door fridge.
@@ -187,7 +188,11 @@ class _FridgeScreenState extends State<FridgeScreen>
       'label': item['label']?.toString() ?? '',
       'qty':   (item['qty'] as num?)?.toInt() ?? 0,
       'color': (item['color'] as num?)?.toInt() ?? 0xFF2A4E7C,
+      'section': item['section']?.toString() ?? '',
       'expiresAt': item['expiresAt'] != null ? DateTime.tryParse(item['expiresAt'].toString()) : null,
+      'isDonation': item['isDonation'] == true || item['donationStatus'] == 'pledged',
+      'donationStatus': item['donationStatus']?.toString() ?? 'none',
+      'donationNotes': item['donationNotes']?.toString() ?? '',
     }).toList();
   }
 
@@ -468,6 +473,23 @@ class _FridgeScreenState extends State<FridgeScreen>
               if (added == true) {
                 _loadItems();
               }
+            },
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.volunteer_activism_rounded, color: Color(0xFFE05275), size: 18),
+            tooltip: 'Food Bank Donations',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DonationsScreen()),
+              );
+              _loadItems();
             },
           ),
           if (_topOpen || _botOpen) ...[
@@ -992,124 +1014,262 @@ class _FridgeScreenState extends State<FridgeScreen>
       curve: Curves.easeOutBack,
       builder: (ctx, v, child) =>
           Transform.scale(scale: v, child: child),
-      child: Container(
-        width: 94,
-        margin: const EdgeInsets.only(right: 9, bottom: 2),
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: isFreeze ? const Color(0xFFDEF0FD) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: ac.withValues(alpha: 0.3), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-                color: ac.withValues(alpha: 0.14),
-                blurRadius: 10,
-                offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Large emoji in circle with Expiry Notification badge
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: ac.withValues(alpha: isFreeze ? 0.12 : 0.08),
-                    shape: BoxShape.circle,
+      child: GestureDetector(
+        onTap: () => _showItemOptions(item),
+        child: Container(
+          width: 94,
+          margin: const EdgeInsets.only(right: 9, bottom: 2),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isFreeze ? const Color(0xFFDEF0FD) : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: ac.withValues(alpha: 0.3), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                  color: ac.withValues(alpha: 0.14),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Large emoji in circle with Expiry Notification badge & Donation badge
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: ac.withValues(alpha: isFreeze ? 0.12 : 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(item['emoji'] as String,
+                          style: const TextStyle(fontSize: 34)),
+                    ),
                   ),
-                  child: Center(
-                    child: Text(item['emoji'] as String,
-                        style: const TextStyle(fontSize: 34)),
+                  if (item['isDonation'] == true) ...[
+                    Positioned(
+                      top: -2,
+                      left: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE05275),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: const Icon(
+                          Icons.volunteer_activism_rounded,
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (item['expiresAt'] != null) ...[
+                    Builder(
+                      builder: (_) {
+                        final expiresAt = item['expiresAt'] as DateTime;
+                        final now = DateTime.now();
+                        final isExpired = now.isAfter(expiresAt);
+                        final diffDays = expiresAt.difference(now).inDays;
+                        final isExpiringSoon = !isExpired && diffDays <= 2;
+                        if (!isExpired && !isExpiringSoon) return const SizedBox.shrink();
+
+                        return Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: isExpired ? Colors.red : Colors.amber.shade700,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                            child: Icon(
+                              isExpired ? Icons.priority_high : Icons.access_time_rounded,
+                              size: 10,
+                              color: Colors.white,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 5),
+              // Label – FittedBox prevents overflow
+              SizedBox(
+                width: 82,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    item['label'] as String,
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isFreeze
+                            ? const Color(0xFF01579B)
+                            : Colors.grey.shade700),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
                   ),
                 ),
-                if (item['expiresAt'] != null) ...[
-                  Builder(
-                    builder: (_) {
-                      final expiresAt = item['expiresAt'] as DateTime;
-                      final now = DateTime.now();
-                      final isExpired = now.isAfter(expiresAt);
-                      final diffDays = expiresAt.difference(now).inDays;
-                      final isExpiringSoon = !isExpired && diffDays <= 2;
-                      if (!isExpired && !isExpiringSoon) return const SizedBox.shrink();
+              ),
+              const SizedBox(height: 6),
+              // Qty row
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                _qBtn(
+                  icon: qty == 0
+                      ? Icons.delete_outline_rounded
+                      : Icons.remove,
+                  color: qty == 0 ? Colors.red.shade400 : ac,
+                  onTap: qty > 0
+                      ? () => _changeQty(list, i, -1)
+                      : () => _confirmRemove(list, i),
+                ),
+                const SizedBox(width: 5),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Text('$qty',
+                      key: ValueKey(qty),
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: qty == 0 ? Colors.red.shade400 : ac)),
+                ),
+                const SizedBox(width: 5),
+                _qBtn(
+                  icon: Icons.add,
+                  color: ac,
+                  onTap: () => _changeQty(list, i, 1),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-                      return Positioned(
-                        top: -2,
-                        right: -2,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: isExpired ? Colors.red : Colors.amber.shade700,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                          child: Icon(
-                            isExpired ? Icons.priority_high : Icons.access_time_rounded,
-                            size: 10,
-                            color: Colors.white,
+  void _showItemOptions(Map<String, dynamic> item) {
+    final isPledged = item['isDonation'] == true || item['donationStatus'] == 'pledged';
+    final token = context.read<AuthProvider>().token;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1B2A3D),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text(item['emoji']?.toString() ?? '📦', style: const TextStyle(fontSize: 32)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['label']?.toString() ?? 'Food Item',
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Quantity: ${item['qty']} • ${isPledged ? "❤️ Pledged for Donation" : "In Fridge"}',
+                          style: TextStyle(
+                            color: isPledged ? const Color(0xFFE05275) : Colors.white60,
+                            fontSize: 12,
+                            fontWeight: isPledged ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
                 ],
-              ],
-            ),
-            const SizedBox(height: 5),
-            // Label – FittedBox prevents overflow
-            SizedBox(
-              width: 82,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  item['label'] as String,
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: isFreeze
-                          ? const Color(0xFF01579B)
-                          : Colors.grey.shade700),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.white12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  isPledged ? Icons.heart_broken_rounded : Icons.volunteer_activism_rounded,
+                  color: isPledged ? Colors.orangeAccent : const Color(0xFFE05275),
                 ),
+                title: Text(
+                  isPledged ? 'Cancel Donation Pledge' : 'Pledge for Food Bank Donation',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  isPledged
+                      ? 'Remove this item from the food bank donation list'
+                      : 'Mark surplus food to donate before it expires',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (token == null) return;
+                  final newStatus = isPledged ? 'none' : 'pledged';
+                  final newIsDonation = !isPledged;
+                  setState(() {
+                    item['isDonation'] = newIsDonation;
+                    item['donationStatus'] = newStatus;
+                  });
+                  try {
+                    await FridgeService.instance.toggleDonation(
+                      token: token,
+                      itemId: item['_id']?.toString() ?? '',
+                      isDonation: newIsDonation,
+                      donationStatus: newStatus,
+                      itemLabel: item['label']?.toString(),
+                    );
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          newIsDonation
+                              ? '❤️ Pledged "${item['label']}" for food donation!'
+                              : 'Removed "${item['label']}" from donations.',
+                        ),
+                        backgroundColor: newIsDonation ? const Color(0xFFE05275) : Colors.blueGrey,
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    setState(() {
+                      item['isDonation'] = isPledged;
+                      item['donationStatus'] = isPledged ? 'pledged' : 'none';
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                  }
+                },
               ),
-            ),
-            const SizedBox(height: 6),
-            // Qty row
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              _qBtn(
-                icon: qty == 0
-                    ? Icons.delete_outline_rounded
-                    : Icons.remove,
-                color: qty == 0 ? Colors.red.shade400 : ac,
-                onTap: qty > 0
-                    ? () => _changeQty(list, i, -1)
-                    : () => _confirmRemove(list, i),
-              ),
-              const SizedBox(width: 5),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                transitionBuilder: (child, anim) =>
-                    ScaleTransition(scale: anim, child: child),
-                child: Text('$qty',
-                    key: ValueKey(qty),
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: qty == 0 ? Colors.red.shade400 : ac)),
-              ),
-              const SizedBox(width: 5),
-              _qBtn(
-                icon: Icons.add,
-                color: ac,
-                onTap: () => _changeQty(list, i, 1),
-              ),
-            ]),
-          ],
+            ],
+          ),
         ),
       ),
     );

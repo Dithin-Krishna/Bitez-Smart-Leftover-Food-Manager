@@ -19,6 +19,7 @@ import 'grocery_list_screen.dart';
 import 'expiry_tracker_screen.dart';
 import 'analytics_dashboard_screen.dart';
 import 'meal_planner_screen.dart';
+import 'donations_screen.dart';
 import '../providers/expiry_provider.dart';
 
 /// Main home screen: logo bar, food photo / text input, fridge shortcut,
@@ -914,7 +915,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ListTile(
               leading: Icon(Icons.volunteer_activism_outlined, color: primary),
               title: Text('Donations', style: TextStyle(color: theme.colorScheme.onSurface)),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DonationsScreen()),
+                );
+              },
             ),
 
             const Spacer(),
