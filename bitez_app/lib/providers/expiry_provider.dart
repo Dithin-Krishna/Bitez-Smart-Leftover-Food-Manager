@@ -24,6 +24,36 @@ class ExpiryProvider extends ChangeNotifier {
 
   bool get hasUrgentAlerts => expiredCount > 0 || expiringSoonCount > 0;
 
+  /// Returns near-to-expire foods, veggies, and fruits from fridge inventory.
+  /// Prioritizes expiringSoon & expired items, followed by produce (veggies & fruits)
+  /// with closest expiry dates.
+  List<FridgeItemModel> getNearExpiryProduce() {
+    final urgent = _items.where((i) =>
+      i.expiryStatus == ExpiryStatus.expiringSoon ||
+      i.expiryStatus == ExpiryStatus.expired
+    ).toList();
+
+    final produceTracked = _items.where((i) =>
+      (i.section == 'veggies' || i.section == 'fruits') &&
+      i.expiresAt != null &&
+      !urgent.any((u) => u.id == i.id)
+    ).toList()..sort((a, b) => (a.daysRemaining ?? 999).compareTo(b.daysRemaining ?? 999));
+
+    final produceOther = _items.where((i) =>
+      (i.section == 'veggies' || i.section == 'fruits') &&
+      i.expiresAt == null &&
+      !urgent.any((u) => u.id == i.id)
+    ).toList();
+
+    final otherTracked = _items.where((i) =>
+      i.expiresAt != null &&
+      !urgent.any((u) => u.id == i.id) &&
+      !produceTracked.any((p) => p.id == i.id)
+    ).toList()..sort((a, b) => (a.daysRemaining ?? 999).compareTo(b.daysRemaining ?? 999));
+
+    return [...urgent, ...produceTracked, ...produceOther, ...otherTracked];
+  }
+
   List<FridgeItemModel> get filteredItems {
     switch (_activeFilter) {
       case 'expired':

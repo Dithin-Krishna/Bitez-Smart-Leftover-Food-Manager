@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/fridge_item_model.dart';
+import '../screens/recipe_results_screen.dart';
 import '../services/local_photo_storage.dart';
 
 class ExpiryVaultDialog extends StatelessWidget {
@@ -280,6 +281,26 @@ class ExpiryVaultDialog extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RecipeResultsScreen(ingredients: [item.label]),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.restaurant_menu_rounded, size: 18),
+              label: Text('Find Recipes with ${item.label}'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: primary,
+                side: BorderSide(color: primary.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
             ),
           ],
         ),

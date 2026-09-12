@@ -10,8 +10,10 @@ import 'package:http/testing.dart';
 import 'package:bitez_app/models/recipe_model.dart';
 import 'package:bitez_app/models/user_model.dart';
 import 'package:bitez_app/providers/auth_provider.dart';
+import 'package:bitez_app/providers/expiry_provider.dart';
 import 'package:bitez_app/providers/user_prefs_provider.dart';
 import 'package:bitez_app/providers/saved_recipes_provider.dart';
+import 'package:bitez_app/screens/expiry_tracker_screen.dart';
 import 'package:bitez_app/screens/fridge_screen.dart';
 import 'package:bitez_app/screens/recipe_detail_screen.dart';
 import 'package:bitez_app/services/api_service.dart';
@@ -99,6 +101,9 @@ void main() {
         ),
         ChangeNotifierProvider<SavedRecipesProvider>(
           create: (_) => SavedRecipesProvider(),
+        ),
+        ChangeNotifierProvider<ExpiryProvider>(
+          create: (_) => ExpiryProvider(),
         ),
       ],
       child: MaterialApp(
@@ -423,6 +428,87 @@ void main() {
 
       // DatePicker should now be open
       expect(find.byType(DatePickerDialog), findsOneWidget);
+    });
+
+    testWidgets('Cooking Mode: tapping "Finish Cooking" opens deduction dialog', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await http.runWithClient(() async {
+        const testRecipe = RecipeModel(
+          id: 7002,
+          title: 'Quick Boiled Eggs',
+          image: 'https://example.com/boiled.jpg',
+          usedIngredientCount: 1,
+          missedIngredientCount: 0,
+          usedIngredients: ['Eggs'],
+          missedIngredients: [],
+          readyInMinutes: 6,
+          servings: 1,
+          instructions: ['Place eggs in boiling water.'],
+        );
+
+        await tester.pumpWidget(
+          buildTestableWidget(
+            child: const RecipeDetailScreen(recipe: testRecipe),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Tap Start Cooking Mode
+        final cookingModeBtn = find.text('Start Cooking Mode');
+        expect(cookingModeBtn, findsOneWidget);
+        await tester.tap(cookingModeBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Step 1 of 1 should display Finish Cooking button
+        final finishBtn = find.text('Finish Cooking 🎉');
+        expect(finishBtn, findsOneWidget);
+
+        // Tap Finish Cooking
+        await tester.tap(finishBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Verify the deduction dialog appeared automatically
+        expect(find.text('Deduct used ingredients from your fridge'), findsOneWidget);
+        expect(find.byType(Dialog), findsOneWidget);
+      }, () => fridgeMockClient);
+    });
+
+    testWidgets('Expiry Vault Page: has "Prepare Recipes for Near-to-Expire Items" button and opens ingredient selection', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await http.runWithClient(() async {
+        await tester.pumpWidget(
+          buildTestableWidget(
+            child: const ExpiryTrackerScreen(),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Verify the prominent Prepare Recipes button is rendered on the Expiry Vault page
+        final prepareBtn = find.text('Prepare Recipes for Near-to-Expire Items');
+        expect(prepareBtn, findsOneWidget);
+
+        // Tap Prepare Recipes button
+        await tester.tap(prepareBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Verify the ingredient selection sheet opened
+        expect(find.text('🍳 Prepare Recipes'), findsOneWidget);
+        expect(find.textContaining('Generate Recipes'), findsOneWidget);
+      }, () => fridgeMockClient);
     });
   });
 }

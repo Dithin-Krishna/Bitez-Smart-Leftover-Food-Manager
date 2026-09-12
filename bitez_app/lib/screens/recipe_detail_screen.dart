@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe_model.dart';
 import '../providers/auth_provider.dart';
+import '../providers/expiry_provider.dart';
 import '../providers/saved_recipes_provider.dart';
 import '../services/fridge_service.dart';
 import '../services/grocery_service.dart';
@@ -60,7 +61,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
       final fetched = await RecipeService.instance.getRecipeInformation(widget.recipe.id);
       if (mounted) {
         setState(() {
-          _detail = fetched;
+          final cleanFetchedUsed = fetched.usedIngredients
+              .where((i) => !['main ingredients', 'salt & pepper'].contains(i.toLowerCase().trim()))
+              .toList();
+          final mergedUsed = {
+            ...widget.recipe.usedIngredients,
+            ...cleanFetchedUsed,
+          }.toList();
+
+          _detail = fetched.copyWith(
+            usedIngredients: mergedUsed.isNotEmpty ? mergedUsed : fetched.usedIngredients,
+          );
           _loading = false;
         });
       }
@@ -91,8 +102,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
   List<Map<String, dynamic>> _getMatchedFridgeItems() {
     if (_fridgeItems.isEmpty) return [];
 
-    final cleanUsed = _detail.usedIngredients
-        .where((ing) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food']
+    final allRecipeIngredients = <String>{
+      ...widget.recipe.usedIngredients,
+      ..._detail.usedIngredients,
+      ..._detail.missedIngredients,
+    };
+
+    final cleanUsed = allRecipeIngredients
+        .where((ing) => !['leftover food', 'leftovers', 'leftover', 'food', 'my food', 'main ingredients', 'salt & pepper']
             .contains(ing.toLowerCase().trim()))
         .toList();
 
@@ -101,16 +118,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 
     for (final ingredient in cleanUsed) {
       final ingLower = ingredient.toLowerCase().trim();
+      final ingStem = ingLower.replaceAll(RegExp(r's$|es$'), '');
 
       for (final fridgeItem in _fridgeItems) {
-        final fridgeId = fridgeItem['_id']?.toString() ?? '';
+        final fridgeId = (fridgeItem['_id'] ?? fridgeItem['id'])?.toString() ?? '';
         if (usedFridgeIds.contains(fridgeId)) continue;
 
         final fridgeLabel = (fridgeItem['label']?.toString() ?? '').toLowerCase().trim();
         if (fridgeLabel.isEmpty) continue;
+        final fridgeStem = fridgeLabel.replaceAll(RegExp(r's$|es$'), '');
 
-        // Fuzzy match: fridge label appears in recipe ingredient string, or vice versa
-        if (ingLower.contains(fridgeLabel) || fridgeLabel.contains(ingLower)) {
+        // Fuzzy match: exact, stem, or substring match
+        if (ingLower.contains(fridgeLabel) ||
+            fridgeLabel.contains(ingLower) ||
+            (ingStem.length > 2 && (fridgeLabel.contains(ingStem) || fridgeStem.contains(ingStem))) ||
+            (fridgeStem.length > 2 && (ingLower.contains(fridgeStem) || ingStem.contains(fridgeStem)))) {
           usedFridgeIds.add(fridgeId);
           matches.add({
             'fridgeItem': fridgeItem,
@@ -127,11 +149,19 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
   // ── Feature 1: Show deduction confirmation dialog ──────────────────────────
   Future<void> _showDeductionDialog() async {
     final matches = _getMatchedFridgeItems();
-    if (matches.isEmpty) {
+    final bool isFallback = matches.isEmpty;
+    final candidateMatches = isFallback
+        ? _fridgeItems.map((f) => {
+            'fridgeItem': f,
+            'ingredientName': f['label']?.toString() ?? 'Fridge Item',
+          }).toList()
+        : matches;
+
+    if (candidateMatches.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No matching fridge items found for this recipe.'),
+            content: Text('No fridge items found to deduct.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -142,7 +172,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
     final result = await showDialog<List<Map<String, dynamic>>>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _CookDeductionDialog(matches: matches),
+      builder: (ctx) => _CookDeductionDialog(
+        matches: candidateMatches,
+        isFallbackList: isFallback,
+      ),
     );
 
     if (result == null || result.isEmpty || !mounted) return;
@@ -162,6 +195,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 
       // Refresh local fridge items
       await _loadFridgeItems();
+
+      // Sync expiry provider so Expiry Vault immediately reflects deduction
+      if (mounted) {
+        try {
+          context.read<ExpiryProvider>().fetchExpiryData(token);
+        } catch (_) {}
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -260,15 +300,20 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
     return cleaned;
   }
 
-  void _showCookingModeModal() {
+  Future<void> _showCookingModeModal() async {
     if (_detail.instructions.isEmpty) return;
 
-    showModalBottomSheet(
+    final finished = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _CookingModeSheet(instructions: _detail.instructions),
     );
+
+    if (finished == true && mounted) {
+      // Auto-trigger deduction after finishing cooking
+      await _showDeductionDialog();
+    }
   }
 
   Future<void> _showPinToMealPlanDialog() async {
@@ -424,7 +469,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
     final savedProvider = context.watch<SavedRecipesProvider>();
     final isSaved = savedProvider.isSaved(_detail.id);
 
-    final hasMatchedItems = _fridgeLoaded && _getMatchedFridgeItems().isNotEmpty;
+    final hasMatchedItems = _fridgeLoaded && _fridgeItems.isNotEmpty;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1076,8 +1121,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 // ── Feature 1: Cook Deduction Confirmation Dialog ────────────────────────────
 class _CookDeductionDialog extends StatefulWidget {
   final List<Map<String, dynamic>> matches;
+  final bool isFallbackList;
 
-  const _CookDeductionDialog({required this.matches});
+  const _CookDeductionDialog({
+    required this.matches,
+    this.isFallbackList = false,
+  });
 
   @override
   State<_CookDeductionDialog> createState() => _CookDeductionDialogState();
@@ -1090,7 +1139,7 @@ class _CookDeductionDialogState extends State<_CookDeductionDialog> {
   @override
   void initState() {
     super.initState();
-    _selected = List.filled(widget.matches.length, true);
+    _selected = List.filled(widget.matches.length, !widget.isFallbackList);
     _quantities = widget.matches.map((m) {
       final qty = (m['fridgeItem']['qty'] as num?)?.toInt() ?? 1;
       // Default deduction: 1 (or available qty if less)
@@ -1143,7 +1192,9 @@ class _CookDeductionDialogState extends State<_CookDeductionDialog> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Deduct used ingredients from your fridge',
+                        widget.isFallbackList
+                            ? 'Select items cooked from your fridge'
+                            : 'Deduct used ingredients from your fridge',
                         style: TextStyle(
                           color: isDark ? Colors.white60 : Colors.grey.shade600,
                           fontSize: 12,
@@ -1420,7 +1471,7 @@ class __CookingModeSheetState extends State<_CookingModeSheet> {
                       if (_currentIndex < total - 1) {
                         setState(() => _currentIndex++);
                       } else {
-                        Navigator.pop(context);
+                        Navigator.pop(context, true);
                       }
                     },
                     style: ElevatedButton.styleFrom(

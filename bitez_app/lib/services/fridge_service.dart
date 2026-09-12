@@ -9,6 +9,21 @@ class FridgeService {
   FridgeService._();
   static final FridgeService instance = FridgeService._();
 
+  /// Reactive notifier that triggers whenever fridge items are added, updated, deducted, or deleted.
+  final ValueNotifier<int> fridgeUpdatedNotifier = ValueNotifier<int>(0);
+
+  /// Specific notifier that triggers when items are deducted after cooking.
+  final ValueNotifier<int> fridgeDeductionNotifier = ValueNotifier<int>(0);
+
+  void notifyFridgeChanged() {
+    fridgeUpdatedNotifier.value++;
+  }
+
+  void notifyFridgeDeducted() {
+    fridgeDeductionNotifier.value++;
+    fridgeUpdatedNotifier.value++;
+  }
+
   // ── GET /api/fridge ────────────────────────────────────────────────────────
   /// Returns items grouped by section key.
   /// Uses server data when online and updates local cache.
@@ -99,6 +114,7 @@ class FridgeService {
       final json = await ApiService.instance.post('/api/fridge', payload, token: token);
       final item = Map<String, dynamic>.from(json['item'] as Map);
       _updateLocalCacheAddItem(item);
+      notifyFridgeChanged();
       return item;
     } catch (e) {
       // Offline fallback: create local item and queue sync operation
@@ -116,6 +132,7 @@ class FridgeService {
         customId: localId,
       );
 
+      notifyFridgeChanged();
       return localItem;
     }
   }
@@ -136,6 +153,7 @@ class FridgeService {
       );
       final item = Map<String, dynamic>.from(json['item'] as Map);
       _updateLocalCacheQty(id, (item['qty'] as num).toInt());
+      notifyFridgeChanged();
       return item;
     } catch (e) {
       // Offline fallback
@@ -148,6 +166,7 @@ class FridgeService {
           'label': itemLabel ?? 'Item',
         },
       );
+      notifyFridgeChanged();
       return {'_id': id, 'qty': updatedQty};
     }
   }
@@ -164,6 +183,7 @@ class FridgeService {
       token: token,
     );
     final rawList = json['items'] as List<dynamic>? ?? [];
+    notifyFridgeChanged();
     return rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
@@ -197,6 +217,7 @@ class FridgeService {
         payload,
         token: token,
       );
+      notifyFridgeDeducted();
       return result;
     } catch (e) {
       // Offline / network fallback: queue mutation
@@ -205,6 +226,7 @@ class FridgeService {
         type: SyncOpType.deductFridgeItems,
         payload: payload,
       );
+      notifyFridgeDeducted();
       return {'success': true, 'offline': true};
     }
   }
@@ -238,9 +260,11 @@ class FridgeService {
         payload,
         token: token,
       );
+      notifyFridgeChanged();
       return Map<String, dynamic>.from(json['item'] as Map);
     } catch (e) {
       debugPrint('FridgeService.toggleDonation: Server unreachable ($e). Saved locally.');
+      notifyFridgeChanged();
       return {'_id': effectiveId, 'isDonation': isDonation, 'donationStatus': isDonation ? 'pledged' : 'none'};
     }
   }
@@ -270,6 +294,7 @@ class FridgeService {
     try {
       await ApiService.instance.delete('/api/fridge/$id', token: token);
       _removeLocalCacheItem(id);
+      notifyFridgeChanged();
     } catch (e) {
       // Offline: remove locally and queue sync
       _removeLocalCacheItem(id);
@@ -277,6 +302,7 @@ class FridgeService {
         type: SyncOpType.deleteFridgeItem,
         payload: {'id': id, 'label': itemLabel ?? 'Item'},
       );
+      notifyFridgeChanged();
     }
   }
 

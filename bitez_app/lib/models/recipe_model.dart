@@ -36,6 +36,44 @@ class RecipeModel {
     this.searchedIngredientCount = 1,
   });
 
+  RecipeModel copyWith({
+    int? id,
+    String? title,
+    String? image,
+    int? usedIngredientCount,
+    int? missedIngredientCount,
+    List<String>? usedIngredients,
+    List<String>? missedIngredients,
+    int? readyInMinutes,
+    int? servings,
+    String? summary,
+    List<String>? instructions,
+    int? calories,
+    int? proteinGrams,
+    int? carbsGrams,
+    int? fatGrams,
+    int? searchedIngredientCount,
+  }) {
+    return RecipeModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      image: image ?? this.image,
+      usedIngredientCount: usedIngredientCount ?? this.usedIngredientCount,
+      missedIngredientCount: missedIngredientCount ?? this.missedIngredientCount,
+      usedIngredients: usedIngredients ?? this.usedIngredients,
+      missedIngredients: missedIngredients ?? this.missedIngredients,
+      readyInMinutes: readyInMinutes ?? this.readyInMinutes,
+      servings: servings ?? this.servings,
+      summary: summary ?? this.summary,
+      instructions: instructions ?? this.instructions,
+      calories: calories ?? this.calories,
+      proteinGrams: proteinGrams ?? this.proteinGrams,
+      carbsGrams: carbsGrams ?? this.carbsGrams,
+      fatGrams: fatGrams ?? this.fatGrams,
+      searchedIngredientCount: searchedIngredientCount ?? this.searchedIngredientCount,
+    );
+  }
+
   int get totalIngredients => usedIngredientCount + missedIngredientCount;
 
   /// Calculate match percentage based on missing extra ingredients.

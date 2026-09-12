@@ -320,10 +320,35 @@ router.patch('/deduct', async (req, res, next) => {
 
       // Fallback matching by label if itemId is missing, invalid ObjectId, or not found
       if (!item && label) {
+        const cleanLabel = label.trim();
+        const escaped = cleanLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         item = await FridgeItem.findOne({
           userId: req.user.id,
-          label: { $regex: new RegExp(`^${label.trim()}$`, 'i') },
+          label: { $regex: new RegExp(`^${escaped}$`, 'i') },
         });
+
+        // If not found, fuzzy search by stem, singular/plural, or substring
+        if (!item) {
+          const userItems = await FridgeItem.find({ userId: req.user.id });
+          const lowerLabel = cleanLabel.toLowerCase();
+          const stemLabel = lowerLabel.replace(/s$/, '').replace(/es$/, '');
+          for (const ui of userItems) {
+            const uiLabel = (ui.label || '').trim().toLowerCase();
+            if (!uiLabel) continue;
+            const stemUi = uiLabel.replace(/s$/, '').replace(/es$/, '');
+            if (
+              uiLabel === lowerLabel ||
+              stemUi === stemLabel ||
+              uiLabel.includes(lowerLabel) ||
+              lowerLabel.includes(uiLabel) ||
+              (stemLabel.length > 2 && uiLabel.includes(stemLabel)) ||
+              (stemUi.length > 2 && lowerLabel.includes(stemUi))
+            ) {
+              item = ui;
+              break;
+            }
+          }
+        }
       }
 
       if (!item) continue;

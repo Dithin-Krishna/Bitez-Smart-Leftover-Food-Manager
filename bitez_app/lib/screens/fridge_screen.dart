@@ -91,6 +91,14 @@ class _FridgeScreenState extends State<FridgeScreen>
       if (s == AnimationStatus.completed) setState(() => _botOpen = true);
       if (s == AnimationStatus.dismissed) setState(() => _botOpen = false);
     });
+
+    FridgeService.instance.fridgeDeductionNotifier.addListener(_onFridgeDeducted);
+  }
+
+  void _onFridgeDeducted() {
+    if (mounted) {
+      _loadItems(showLoadingIndicator: false);
+    }
   }
 
   String? _lastToken;
@@ -114,11 +122,13 @@ class _FridgeScreenState extends State<FridgeScreen>
     }
   }
 
-  Future<void> _loadItems() async {
+  Future<void> _loadItems({bool showLoadingIndicator = true}) async {
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
     try {
-      setState(() { _loadingItems = true; _loadError = null; });
+      if (showLoadingIndicator) {
+        setState(() { _loadingItems = true; _loadError = null; });
+      }
       final grouped = await FridgeService.instance.getGrouped(token);
       if (!mounted) return;
 
@@ -199,6 +209,7 @@ class _FridgeScreenState extends State<FridgeScreen>
 
   @override
   void dispose() {
+    FridgeService.instance.fridgeDeductionNotifier.removeListener(_onFridgeDeducted);
     _topCtrl.dispose();
     _botCtrl.dispose();
     _glowCtrl.dispose();
@@ -409,6 +420,17 @@ class _FridgeScreenState extends State<FridgeScreen>
               ],
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 18),
+            tooltip: 'Refresh Fridge',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: _loadItems,
+          ),
+          const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.timer_outlined, color: Colors.orangeAccent, size: 18),
             tooltip: 'Expiry Tracker & Vault',
