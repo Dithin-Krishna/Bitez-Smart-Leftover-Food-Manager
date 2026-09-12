@@ -44,8 +44,16 @@ router.post('/detect', authMiddleware, geminiLimiter, async (req, res, next) => 
         'gemini-2.0-flash'
       ];
       const promptText = `Analyze this image and identify ALL visible edible food items, raw ingredients, fruits, vegetables, dairy, eggs, meats, seafood, beverages, bakery items, or prepared dishes.${yoloHint}
+Count the exact number/quantity of each distinct food item visible (e.g. individual fruits, vegetables, eggs, slices, bottles, cans). If an item is in bulk, liquid, or a cooked dish (like rice, soup, milk), set qty to 1.
 Strictly ignore plates, bowls, utensils, cutlery, tables, chairs, electronics, bottles, packaging, people, furniture, and non-edible objects.
-Return ONLY a raw JSON array of strings e.g. ["Milk", "Egg", "Apple", "Chicken", "Tomato"]. If no food items are visible, return []. Do not use markdown backticks or extra text.`;
+Return ONLY a raw JSON array of objects with "name" (string) and "qty" (integer >= 1), e.g.:
+[
+  {"name": "Apple", "qty": 3},
+  {"name": "Egg", "qty": 6},
+  {"name": "Tomato", "qty": 2},
+  {"name": "Milk", "qty": 1}
+]
+If no food items are visible, return []. Do not use markdown backticks or extra text.`;
 
       for (const modelName of candidateModels) {
         try {
@@ -79,7 +87,18 @@ Return ONLY a raw JSON array of strings e.g. ["Milk", "Egg", "Apple", "Chicken",
                 try {
                   const parsed = JSON.parse(match[0]);
                   if (Array.isArray(parsed) && parsed.length > 0) {
-                    rawDetectedItems = parsed.map((i) => i.toString().trim());
+                    rawDetectedItems = parsed.map((i) => {
+                      if (typeof i === 'object' && i !== null) {
+                        return {
+                          name: (i.name || i.item || i.label || '').toString().trim(),
+                          qty: Math.max(1, parseInt(i.qty, 10) || 1),
+                        };
+                      }
+                      return {
+                        name: i.toString().trim(),
+                        qty: 1,
+                      };
+                    }).filter(i => i.name.length > 0);
                   }
                 } catch (_) {}
               }
@@ -98,26 +117,43 @@ Return ONLY a raw JSON array of strings e.g. ["Milk", "Egg", "Apple", "Chicken",
     // Fallback to YOLO detections if Gemini did not return items
     if (rawDetectedItems.length === 0) {
       if (Array.isArray(yoloDetections) && yoloDetections.length > 0) {
-        rawDetectedItems = yoloDetections.map(d => typeof d === 'string' ? d : d.label);
+        const counts = {};
+        for (const d of yoloDetections) {
+          const label = typeof d === 'string' ? d : (d.label || '');
+          if (label) {
+            counts[label] = (counts[label] || 0) + 1;
+          }
+        }
+        rawDetectedItems = Object.entries(counts).map(([name, qty]) => ({ name, qty }));
       }
     }
 
     // Phase 4: Food Catalog Validation & Filtering
-    // Filter out non-food objects and enrich with emoji, category, and defaultSection
+    // Filter out non-food objects and enrich with emoji, category, defaultSection, and quantity
     const validatedItems = [];
-    const seenNames = new Set();
+    const seenNames = new Map(); // lowercase name -> index in validatedItems
 
-    for (const rawName of rawDetectedItems) {
+    for (const item of rawDetectedItems) {
+      const rawName = item.name;
+      const detectedQty = Number(item.qty) || 1;
       const enriched = validateAndEnrich(rawName);
-      if (enriched && !seenNames.has(enriched.name.toLowerCase())) {
-        seenNames.add(enriched.name.toLowerCase());
-        validatedItems.push({
-          label: enriched.name,
-          category: enriched.category,
-          section: enriched.defaultSection,
-          emoji: enriched.emoji,
-          isValidated: enriched.isValidated,
-        });
+
+      if (enriched) {
+        const key = enriched.name.toLowerCase();
+        if (seenNames.has(key)) {
+          const idx = seenNames.get(key);
+          validatedItems[idx].qty += detectedQty;
+        } else {
+          seenNames.set(key, validatedItems.length);
+          validatedItems.push({
+            label: enriched.name,
+            category: enriched.category,
+            section: enriched.defaultSection,
+            emoji: enriched.emoji,
+            qty: detectedQty,
+            isValidated: enriched.isValidated,
+          });
+        }
       }
     }
 

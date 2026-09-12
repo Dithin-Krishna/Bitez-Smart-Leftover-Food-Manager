@@ -33,7 +33,7 @@ class RecognizedFoodItem {
       category: json['category']?.toString() ?? 'Vegetables',
       section: json['section']?.toString() ?? 'veggies',
       emoji: json['emoji']?.toString() ?? '🥗',
-      qty: 1,
+      qty: (json['qty'] as num?)?.toInt() ?? 1,
       isSelected: true,
       isValidated: json['isValidated'] == true,
     );
@@ -98,7 +98,15 @@ class FoodRecognitionService {
 
     // Fallback: Use local YOLO detections if backend returned empty
     if (yoloDetections.isNotEmpty) {
-      return yoloDetections.map((d) => _createFallbackFoodItem(d.label)).toList();
+      final counts = <String, int>{};
+      for (final d in yoloDetections) {
+        counts[d.label] = (counts[d.label] ?? 0) + 1;
+      }
+      return counts.entries.map((e) {
+        final item = _createFallbackFoodItem(e.key);
+        item.qty = e.value;
+        return item;
+      }).toList();
     }
 
     // No food items detected in image
