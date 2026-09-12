@@ -41,22 +41,43 @@ class FoodConfirmationDialog extends StatefulWidget {
 class _FoodConfirmationDialogState extends State<FoodConfirmationDialog> {
   late List<RecognizedFoodItem> _items;
 
+  String _normalize(String label) {
+    var clean = label.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    if (clean.endsWith('oes')) {
+      clean = clean.substring(0, clean.length - 2);
+    } else if (clean.endsWith('ies')) {
+      clean = '${clean.substring(0, clean.length - 3)}y';
+    } else if (clean.endsWith('ves')) {
+      clean = '${clean.substring(0, clean.length - 3)}f';
+    } else if (clean.endsWith('s') && !clean.endsWith('ss')) {
+      clean = clean.substring(0, clean.length - 1);
+    }
+    return clean;
+  }
+
   @override
   void initState() {
     super.initState();
-    // Clone list to allow inline editing
-    _items = widget.detectedItems.map((item) {
-      return RecognizedFoodItem(
-        label: item.label,
-        category: item.category,
-        section: item.section,
-        emoji: item.emoji,
-        qty: item.qty,
-        isSelected: item.isSelected,
-        isValidated: item.isValidated,
-        expiresAt: item.expiresAt ?? DateTime.now().add(const Duration(days: 7)),
-      );
-    }).toList();
+    // Consolidate detected items by normalized label and section so duplicate rows are merged
+    final Map<String, RecognizedFoodItem> merged = {};
+    for (final item in widget.detectedItems) {
+      final key = '${item.section}:${_normalize(item.label)}';
+      if (merged.containsKey(key)) {
+        merged[key]!.qty += item.qty;
+      } else {
+        merged[key] = RecognizedFoodItem(
+          label: item.label,
+          category: item.category,
+          section: item.section,
+          emoji: item.emoji,
+          qty: item.qty,
+          isSelected: item.isSelected,
+          isValidated: item.isValidated,
+          expiresAt: item.expiresAt ?? DateTime.now().add(const Duration(days: 7)),
+        );
+      }
+    }
+    _items = merged.values.toList();
   }
 
   void _addNewItem() {

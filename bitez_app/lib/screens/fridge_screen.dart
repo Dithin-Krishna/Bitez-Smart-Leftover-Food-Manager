@@ -169,7 +169,7 @@ class _FridgeScreenState extends State<FridgeScreen>
       {'emoji': '🥚', 'label': 'Eggs', 'qty': 6, 'color': 0xFF2A5B94, 'section': 'dairy'},
       {'emoji': '🧀', 'label': 'Cheddar', 'qty': 1, 'color': 0xFF3575B8, 'section': 'dairy'},
       {'emoji': '🥦', 'label': 'Broccoli', 'qty': 2, 'color': 0xFF1E6B4A, 'section': 'veggies'},
-      {'emoji': '🥕', 'label': 'Carrots', 'qty': 4, 'color': 0xFF28875D, 'section': 'veggies'},
+      {'emoji': '🥕', 'label': 'Carrot', 'qty': 4, 'color': 0xFF28875D, 'section': 'veggies'},
       {'emoji': '🧄', 'label': 'Garlic', 'qty': 1, 'color': 0xFF32A370, 'section': 'veggies'},
       {'emoji': '🧅', 'label': 'Onion', 'qty': 3, 'color': 0xFF28875D, 'section': 'veggies'},
       {'emoji': '🍎', 'label': 'Red Apples', 'qty': 5, 'color': 0xFF8A3B2A, 'section': 'fruits'},
@@ -205,6 +205,20 @@ class _FridgeScreenState extends State<FridgeScreen>
       'donationStatus': item['donationStatus']?.toString() ?? 'none',
       'donationNotes': item['donationNotes']?.toString() ?? '',
     }).toList();
+  }
+
+  String _normalizeFoodLabel(String label) {
+    var clean = label.trim().toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+    if (clean.endsWith('oes')) {
+      clean = clean.substring(0, clean.length - 2);
+    } else if (clean.endsWith('ies')) {
+      clean = '${clean.substring(0, clean.length - 3)}y';
+    } else if (clean.endsWith('ves')) {
+      clean = '${clean.substring(0, clean.length - 3)}f';
+    } else if (clean.endsWith('s') && !clean.endsWith('ss')) {
+      clean = clean.substring(0, clean.length - 1);
+    }
+    return clean;
   }
 
 
@@ -1389,7 +1403,7 @@ class _FridgeScreenState extends State<FridgeScreen>
                 final token = context.read<AuthProvider>().token;
                 if (token != null) {
                   try {
-                    final item = await FridgeService.instance.addItem(
+                    await FridgeService.instance.addItem(
                       token: token,
                       emoji: e,
                       label: l,
@@ -1398,22 +1412,26 @@ class _FridgeScreenState extends State<FridgeScreen>
                       section: section,
                     );
                     if (mounted) {
-                      setState(() => shelf.add({
-                            '_id': item['_id']?.toString() ?? '',
-                            'emoji': item['emoji']?.toString() ?? e,
-                            'label': item['label']?.toString() ?? l,
-                            'qty': (item['qty'] as num?)?.toInt() ?? q,
-                            'color': (item['color'] as num?)?.toInt() ?? color.toARGB32(),
-                          }));
+                      await _loadItems(showLoadingIndicator: false);
                     }
                   } catch (_) {
                     if (mounted) {
-                      setState(() => shelf.add({
+                      final norm = _normalizeFoodLabel(l);
+                      final idx = shelf.indexWhere((it) =>
+                          _normalizeFoodLabel(it['label']?.toString() ?? '') == norm);
+                      setState(() {
+                        if (idx >= 0) {
+                          shelf[idx]['qty'] =
+                              ((shelf[idx]['qty'] as num?)?.toInt() ?? 0) + q;
+                        } else {
+                          shelf.add({
                             'emoji': e,
                             'label': l,
                             'qty': q,
                             'color': color.toARGB32(),
-                          }));
+                          });
+                        }
+                      });
                     }
                   }
                 }

@@ -42,26 +42,120 @@ async function autoCheckLowStockGrocery(userId, fridgeItem, customReason) {
   }
 }
 
+/**
+ * Normalizes a food label for consistent comparison and deduplication:
+ * - Trims whitespace and converts to lower-case
+ * - Removes non-alphanumeric characters (punctuation, hyphens, etc.)
+ * - Handles English pluralizations (e.g. carrots -> carrot, tomatoes -> tomato, berries -> berry, loaves -> loaf, eggs -> egg)
+ */
+function normalizeLabel(label) {
+  if (!label || typeof label !== 'string') return '';
+  let clean = label.trim().toLowerCase().replace(/[^\w\s]/g, '');
+
+  if (clean.endsWith('oes')) {
+    clean = clean.slice(0, -2);
+  } else if (clean.endsWith('ies')) {
+    clean = clean.slice(0, -3) + 'y';
+  } else if (clean.endsWith('ves')) {
+    clean = clean.slice(0, -3) + 'f';
+  } else if (clean.endsWith('s') && !clean.endsWith('ss')) {
+    clean = clean.slice(0, -1);
+  }
+  return clean;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/fridge
 // Returns all fridge items for the logged-in user, grouped by section.
 // Query param: ?section=frozen  (optional — filter by section)
+// Automatically deduplicates and merges existing duplicate items (e.g. carrot - 19, carrot - 4)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res, next) => {
   try {
     const filter = { userId: req.user.id };
     if (req.query.section) filter.section = req.query.section;
 
-    const items = await FridgeItem.find(filter).sort({ section: 1, label: 1 });
+    const items = await FridgeItem.find(filter).sort({ section: 1, createdAt: 1 });
+
+    // Deduplicate and merge any duplicate records for this user
+    const uniqueMap = new Map();
+    const redundantIds = [];
+    const itemsToUpdate = [];
+
+    for (const item of items) {
+      const norm = normalizeLabel(item.label);
+      const key = `${item.section}:${norm}`;
+
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      } else {
+        const primary = uniqueMap.get(key);
+        // Merge quantities
+        primary.qty = (primary.qty || 0) + (item.qty || 0);
+
+        // Prefer Title Case or capitalized label over all-lowercase
+        if (primary.label === primary.label.toLowerCase() && item.label !== item.label.toLowerCase()) {
+          primary.label = item.label;
+        }
+        // Prefer non-generic emoji
+        if ((!primary.emoji || primary.emoji === '🛒') && item.emoji && item.emoji !== '🛒') {
+          primary.emoji = item.emoji;
+        }
+        // Keep the latest expiry date
+        if (item.expiresAt) {
+          if (!primary.expiresAt || new Date(item.expiresAt) > new Date(primary.expiresAt)) {
+            primary.expiresAt = item.expiresAt;
+          }
+        }
+        // Preserve any manufacturing dates or images if primary lacks them
+        if (!primary.manufacturingDate && item.manufacturingDate) {
+          primary.manufacturingDate = item.manufacturingDate;
+        }
+        if (!primary.expiryImage && item.expiryImage) {
+          primary.expiryImage = item.expiryImage;
+        }
+        if (!primary.expiryNotes && item.expiryNotes) {
+          primary.expiryNotes = item.expiryNotes;
+        }
+
+        redundantIds.push(item._id);
+        if (!itemsToUpdate.some(it => it._id.toString() === primary._id.toString())) {
+          itemsToUpdate.push(primary);
+        }
+      }
+    }
+
+    // Clean up duplicate items from MongoDB Atlas
+    if (redundantIds.length > 0) {
+      await FridgeItem.deleteMany({ _id: { $in: redundantIds } });
+      for (const primary of itemsToUpdate) {
+        await FridgeItem.updateOne(
+          { _id: primary._id },
+          {
+            $set: {
+              qty: primary.qty,
+              label: primary.label,
+              emoji: primary.emoji,
+              expiresAt: primary.expiresAt,
+              manufacturingDate: primary.manufacturingDate,
+              expiryImage: primary.expiryImage,
+              expiryNotes: primary.expiryNotes,
+            }
+          }
+        );
+      }
+    }
+
+    const finalItems = Array.from(uniqueMap.values());
 
     // Also return grouped structure for convenience
     const grouped = {};
-    for (const item of items) {
+    for (const item of finalItems) {
       if (!grouped[item.section]) grouped[item.section] = [];
       grouped[item.section].push(item);
     }
 
-    res.json({ success: true, count: items.length, items, grouped });
+    res.json({ success: true, count: finalItems.length, items: finalItems, grouped });
   } catch (err) {
     next(err);
   }
@@ -115,7 +209,7 @@ const { getDefaultShelfLifeDays } = require('../models/FoodCatalog');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/fridge
-// Add a single new item.
+// Add a single new item (merges quantity if item already exists in section).
 // Body: { emoji, label, qty, color, section, expiresAt?, manufacturingDate?, expiryImage?, expiryNotes? }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res, next) => {
@@ -129,6 +223,26 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    const norm = normalizeLabel(label);
+    const addedQty = qty !== undefined ? Number(qty) : 1;
+
+    // Check if an item already exists in this section with matching normalized label
+    const existingItems = await FridgeItem.find({ userId: req.user.id, section });
+    const existing = existingItems.find(it => normalizeLabel(it.label) === norm);
+
+    if (existing) {
+      existing.qty = (existing.qty || 0) + addedQty;
+      if (emoji && emoji !== '🛒') existing.emoji = emoji;
+      if (expiresAt) existing.expiresAt = expiresAt;
+      if (manufacturingDate) existing.manufacturingDate = manufacturingDate;
+      if (expiryImage) existing.expiryImage = expiryImage;
+      if (expiryNotes) existing.expiryNotes = expiryNotes;
+      await existing.save();
+
+      await autoCheckLowStockGrocery(req.user.id, existing);
+      return res.status(200).json({ success: true, item: existing, merged: true });
+    }
+
     // Auto-calculate default expiry date if none was explicitly provided
     let finalExpiresAt = expiresAt || null;
     if (!finalExpiresAt) {
@@ -140,7 +254,7 @@ router.post('/', async (req, res, next) => {
       userId: req.user.id,
       emoji,
       label: label.trim(),
-      qty:   qty   !== undefined ? Number(qty) : 1,
+      qty: addedQty,
       color: color !== undefined ? Number(color) : undefined,
       section,
       expiresAt: finalExpiresAt,
@@ -151,7 +265,7 @@ router.post('/', async (req, res, next) => {
 
     await autoCheckLowStockGrocery(req.user.id, item);
 
-    res.status(201).json({ success: true, item });
+    res.status(201).json({ success: true, item, merged: false });
   } catch (err) {
     next(err);
   }
@@ -159,8 +273,8 @@ router.post('/', async (req, res, next) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/fridge/bulk
-// Seed / replace all items for a user (useful for first-time sync of
-// the hardcoded demo items in fridge_screen.dart).
+// Bulk add items (e.g. from camera vision or seed).
+// Merges quantities if item with same normalized label already exists.
 // Body: { items: [ { emoji, label, qty, color, section }, ... ] }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/bulk', async (req, res, next) => {
@@ -170,27 +284,62 @@ router.post('/bulk', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'items array is required.' });
     }
 
-    // Attach userId to each item and compute default expiresAt if missing
-    const docs = items.map((item) => {
-      let finalExpiresAt = item.expiresAt || null;
-      if (!finalExpiresAt) {
-        const days = getDefaultShelfLifeDays(item.label, item.section);
-        finalExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-      }
-      return {
-        ...item,
-        userId: req.user.id,
-        qty:   item.qty   !== undefined ? Number(item.qty)   : 1,
-        color: item.color !== undefined ? Number(item.color) : undefined,
-        expiresAt: finalExpiresAt,
-      };
-    });
-
-    const inserted = await FridgeItem.insertMany(docs, { ordered: false });
-    for (const doc of inserted) {
-      await autoCheckLowStockGrocery(req.user.id, doc);
+    // Retrieve all existing items for this user to check for duplicates & merge
+    const existingItems = await FridgeItem.find({ userId: req.user.id });
+    const existingMap = new Map();
+    for (const it of existingItems) {
+      const key = `${it.section}:${normalizeLabel(it.label)}`;
+      existingMap.set(key, it);
     }
-    res.status(201).json({ success: true, count: inserted.length, items: inserted });
+
+    const finalResults = [];
+    for (const rawItem of items) {
+      if (!rawItem.label || !rawItem.section) continue;
+
+      const norm = normalizeLabel(rawItem.label);
+      const key = `${rawItem.section}:${norm}`;
+      const addQty = rawItem.qty !== undefined ? Number(rawItem.qty) : 1;
+
+      if (existingMap.has(key)) {
+        // Merge into existing item
+        const existing = existingMap.get(key);
+        existing.qty = (existing.qty || 0) + addQty;
+        if (rawItem.emoji && rawItem.emoji !== '🛒') existing.emoji = rawItem.emoji;
+        if (rawItem.expiresAt) existing.expiresAt = rawItem.expiresAt;
+        if (rawItem.manufacturingDate) existing.manufacturingDate = rawItem.manufacturingDate;
+        if (rawItem.expiryImage) existing.expiryImage = rawItem.expiryImage;
+        if (rawItem.expiryNotes) existing.expiryNotes = rawItem.expiryNotes;
+        await existing.save();
+        await autoCheckLowStockGrocery(req.user.id, existing);
+        finalResults.push(existing);
+      } else {
+        let finalExpiresAt = rawItem.expiresAt || null;
+        if (!finalExpiresAt) {
+          const days = getDefaultShelfLifeDays(rawItem.label, rawItem.section);
+          finalExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        }
+
+        const created = await FridgeItem.create({
+          userId: req.user.id,
+          emoji: rawItem.emoji || '🛒',
+          label: rawItem.label.trim(),
+          qty: addQty,
+          color: rawItem.color !== undefined ? Number(rawItem.color) : undefined,
+          section: rawItem.section,
+          expiresAt: finalExpiresAt,
+          manufacturingDate: rawItem.manufacturingDate || null,
+          expiryImage: rawItem.expiryImage || null,
+          expiryNotes: rawItem.expiryNotes || '',
+        });
+
+        // Track in existingMap so any subsequent items in the same bulk array merge too
+        existingMap.set(key, created);
+        await autoCheckLowStockGrocery(req.user.id, created);
+        finalResults.push(created);
+      }
+    }
+
+    res.status(201).json({ success: true, count: finalResults.length, items: finalResults });
   } catch (err) {
     next(err);
   }
@@ -327,25 +476,20 @@ router.patch('/deduct', async (req, res, next) => {
           label: { $regex: new RegExp(`^${escaped}$`, 'i') },
         });
 
-        // If not found, fuzzy search by stem, singular/plural, or substring
+        // If not found, match by normalizeLabel or substring
         if (!item) {
           const userItems = await FridgeItem.find({ userId: req.user.id });
-          const lowerLabel = cleanLabel.toLowerCase();
-          const stemLabel = lowerLabel.replace(/s$/, '').replace(/es$/, '');
-          for (const ui of userItems) {
-            const uiLabel = (ui.label || '').trim().toLowerCase();
-            if (!uiLabel) continue;
-            const stemUi = uiLabel.replace(/s$/, '').replace(/es$/, '');
-            if (
-              uiLabel === lowerLabel ||
-              stemUi === stemLabel ||
-              uiLabel.includes(lowerLabel) ||
-              lowerLabel.includes(uiLabel) ||
-              (stemLabel.length > 2 && uiLabel.includes(stemLabel)) ||
-              (stemUi.length > 2 && lowerLabel.includes(stemUi))
-            ) {
-              item = ui;
-              break;
+          const targetNorm = normalizeLabel(cleanLabel);
+          item = userItems.find(ui => normalizeLabel(ui.label) === targetNorm);
+
+          if (!item) {
+            const lowerLabel = cleanLabel.toLowerCase();
+            for (const ui of userItems) {
+              const uiLabel = (ui.label || '').trim().toLowerCase();
+              if (uiLabel && (uiLabel.includes(lowerLabel) || lowerLabel.includes(uiLabel))) {
+                item = ui;
+                break;
+              }
             }
           }
         }
