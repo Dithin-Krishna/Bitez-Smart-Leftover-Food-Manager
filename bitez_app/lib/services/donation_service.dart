@@ -2,6 +2,10 @@ import 'package:flutter/foundation.dart';
 import '../models/ngo_model.dart';
 import 'api_service.dart';
 
+import '../models/sync_operation.dart';
+import 'offline_storage_service.dart';
+import 'sync_service.dart';
+
 /// Service managing Community Food Banks directory and donation pledge routing.
 class DonationService {
   DonationService._();
@@ -15,11 +19,15 @@ class DonationService {
     try {
       final res = await ApiService.instance.get('/api/donations/ngos', token: token);
       final raw = res['ngos'] as List<dynamic>? ?? [];
-      return raw
-          .map((e) => NgoModel.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
+      final ngosMap = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      await OfflineStorageService.instance.cacheNgoList(ngosMap);
+      return ngosMap.map(NgoModel.fromJson).toList();
     } catch (e) {
       debugPrint('DonationService.getNgos error: $e');
+      final cached = OfflineStorageService.instance.getCachedNgoList();
+      if (cached != null && cached.isNotEmpty) {
+        return cached.map(NgoModel.fromJson).toList();
+      }
       return _fallbackNgos;
     }
   }
@@ -31,14 +39,16 @@ class DonationService {
     required String ngoName,
     String? notes,
   }) async {
+    final payload = {
+      'itemId': itemId,
+      'ngoName': ngoName,
+      'notes': ?notes,
+    };
+
     try {
       final res = await ApiService.instance.post(
         '/api/donations/assign',
-        {
-          'itemId': itemId,
-          'ngoName': ngoName,
-          'notes': ?notes,
-        },
+        payload,
         token: token,
       );
 
@@ -48,8 +58,13 @@ class DonationService {
       }
       return false;
     } catch (e) {
-      debugPrint('DonationService.assignPledge error: $e');
-      return false;
+      debugPrint('DonationService.assignPledge offline: $e. Queuing sync mutation.');
+      await SyncService.instance.queueMutation(
+        type: SyncOpType.assignDonation,
+        payload: payload,
+      );
+      donationUpdatedNotifier.value++;
+      return true;
     }
   }
 

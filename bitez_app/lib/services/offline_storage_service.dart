@@ -15,6 +15,8 @@ class OfflineStorageService {
   static const String boxGrocery = 'bitez_grocery_box';
   static const String boxQueue = 'bitez_sync_queue_box';
   static const String boxConflicts = 'bitez_conflicts_box';
+  static const String boxWaste = 'bitez_waste_box';
+  static const String boxDonations = 'bitez_donations_box';
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
@@ -47,6 +49,8 @@ class OfflineStorageService {
       if (!Hive.isBoxOpen(boxGrocery)) Hive.openBox<dynamic>(boxGrocery),
       if (!Hive.isBoxOpen(boxQueue)) Hive.openBox<String>(boxQueue),
       if (!Hive.isBoxOpen(boxConflicts)) Hive.openBox<String>(boxConflicts),
+      if (!Hive.isBoxOpen(boxWaste)) Hive.openBox<dynamic>(boxWaste),
+      if (!Hive.isBoxOpen(boxDonations)) Hive.openBox<dynamic>(boxDonations),
     ]);
   }
 
@@ -55,6 +59,8 @@ class OfflineStorageService {
   Box<dynamic> get _groceryBox => Hive.box<dynamic>(boxGrocery);
   Box<String> get _queueBox => Hive.box<String>(boxQueue);
   Box<String> get _conflictsBox => Hive.box<String>(boxConflicts);
+  Box<dynamic> get _wasteBox => Hive.box<dynamic>(boxWaste);
+  Box<dynamic> get _donationsBox => Hive.box<dynamic>(boxDonations);
 
   // ── Fridge Cache ──────────────────────────────────────────────────────────
 
@@ -216,5 +222,52 @@ class OfflineStorageService {
   Future<void> clearConflicts() async {
     if (!_initialized) return;
     await _conflictsBox.clear();
+  }
+
+  // ── Food Waste Cache ──────────────────────────────────────────────────────
+
+  Future<void> cacheWasteRecords(List<Map<String, dynamic>> records) async {
+    if (!_initialized) return;
+    await _wasteBox.put('records', jsonEncode(records));
+    await _wasteBox.put('cachedAt', DateTime.now().toIso8601String());
+  }
+
+  List<Map<String, dynamic>>? getCachedWasteRecords() {
+    if (!_initialized) return null;
+    final raw = _wasteBox.get('records') as String?;
+    if (raw == null) return null;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> addLocalWasteRecord(Map<String, dynamic> record) async {
+    if (!_initialized) return;
+    final existing = getCachedWasteRecords() ?? [];
+    existing.insert(0, record);
+    await cacheWasteRecords(existing);
+  }
+
+  // ── Donations & NGO Cache ──────────────────────────────────────────────────
+
+  Future<void> cacheNgoList(List<Map<String, dynamic>> ngos) async {
+    if (!_initialized) return;
+    await _donationsBox.put('ngos', jsonEncode(ngos));
+    await _donationsBox.put('cachedAt', DateTime.now().toIso8601String());
+  }
+
+  List<Map<String, dynamic>>? getCachedNgoList() {
+    if (!_initialized) return null;
+    final raw = _donationsBox.get('ngos') as String?;
+    if (raw == null) return null;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return null;
+    }
   }
 }

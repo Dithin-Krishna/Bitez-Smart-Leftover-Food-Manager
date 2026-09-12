@@ -151,6 +151,14 @@ class SyncService {
       case SyncOpType.bulkGroceryItems:
         await ApiService.instance.post('/api/grocery/bulk', op.payload, token: token);
         break;
+
+      case SyncOpType.recordWaste:
+        await ApiService.instance.post('/api/waste', op.payload, token: token);
+        break;
+
+      case SyncOpType.assignDonation:
+        await ApiService.instance.post('/api/donations/assign', op.payload, token: token);
+        break;
     }
   }
 

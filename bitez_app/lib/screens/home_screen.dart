@@ -21,6 +21,7 @@ import 'analytics_dashboard_screen.dart';
 import 'meal_planner_screen.dart';
 import 'donations_screen.dart';
 import '../providers/expiry_provider.dart';
+import '../widgets/sync_status_banner.dart';
 
 /// Main home screen: logo bar, food photo / text input, fridge shortcut,
 /// bottom navigation bar.
@@ -523,7 +524,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
+            const SyncStatusBanner(),
+            const SizedBox(height: 10),
 
             // ── Expiry Notification Alert Banner ──────────────────────────
             Consumer<ExpiryProvider>(

@@ -10,6 +10,8 @@ enum SyncOpType {
   updateGroceryItem,
   deleteGroceryItem,
   bulkGroceryItems,
+  recordWaste,
+  assignDonation,
 }
 
 /// Represents a queued write mutation to be synced when internet returns.
