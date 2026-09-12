@@ -53,7 +53,7 @@ class ApiService {
   // static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
 
   /// Host IP on local Wi-Fi for physical devices (local fallback)
-  static const String _hostWifiIp = '10.107.38.211';
+  static const String _hostWifiIp = '192.168.1.15';
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 

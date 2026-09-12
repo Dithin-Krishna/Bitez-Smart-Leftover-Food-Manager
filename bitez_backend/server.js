@@ -48,6 +48,18 @@ const connectDB = async () => {
 };
 connectDB();
 
+// ── Database Readiness Guard ──────────────────────────────────────────────────
+// Immediately respond with 503 instead of hanging on Mongoose query buffering
+app.use(['/api/auth', '/api/fridge', '/api/user', '/api/grocery', '/api/analytics', '/api/meal-planner'], (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database offline: MongoDB connection failed (bad auth). Please check MONGO_URI credentials in .env.',
+    });
+  }
+  next();
+});
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/fridge', require('./routes/fridge'));
