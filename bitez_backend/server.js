@@ -1,6 +1,18 @@
-const express  = require('express');
+const express = require('express');
 const mongoose = require('mongoose');
-const cors     = require('cors');
+const cors = require('cors');
+const path = require('path');
+
+const dotenvResult = require('dotenv').config({
+  path: path.join(__dirname, '.env')
+});
+
+console.log('📁 Server directory:', __dirname);
+console.log('🔐 MONGO_URI loaded:', process.env.MONGO_URI ? 'YES ✅' : 'NO ❌');
+
+if (dotenvResult.error) {
+  console.error('❌ Error loading .env:', dotenvResult.error);
+}
 require('dotenv').config();
 
 const app = express();
@@ -33,14 +45,14 @@ const connectDB = async () => {
 connectDB();
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',    require('./routes/auth'));
-app.use('/api/fridge',  require('./routes/fridge'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/fridge', require('./routes/fridge'));
 app.use('/api/recipes', require('./routes/recipes'));
-app.use('/api/user',    require('./routes/user'));
-app.use('/api/chat',      require('./routes/chat'));
-app.use('/api/vision',    require('./routes/vision'));
-app.use('/api/grocery',      require('./routes/grocery'));
-app.use('/api/analytics',    require('./routes/analytics'));
+app.use('/api/user', require('./routes/user'));
+app.use('/api/chat', require('./routes/chat'));
+app.use('/api/vision', require('./routes/vision'));
+app.use('/api/grocery', require('./routes/grocery'));
+app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/meal-planner', require('./routes/mealPlanner'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
