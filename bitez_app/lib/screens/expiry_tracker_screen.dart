@@ -6,6 +6,7 @@ import '../providers/expiry_provider.dart';
 import '../services/fridge_service.dart';
 import '../widgets/expiry_scan_dialog.dart';
 import '../widgets/expiry_vault_dialog.dart';
+import '../widgets/waste_record_dialog.dart';
 import 'recipe_results_screen.dart';
 
 class ExpiryTrackerScreen extends StatefulWidget {
@@ -601,6 +602,30 @@ class _ExpiryItemCard extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.edit_outlined, size: 20),
               onPressed: () => ExpiryScanDialog.show(context, item: item),
+            ),
+            IconButton(
+              icon: Icon(
+                item.expiryStatus == ExpiryStatus.expired
+                    ? Icons.delete_forever_rounded
+                    : Icons.delete_outline_rounded,
+                color: Colors.redAccent.shade200,
+                size: 20,
+              ),
+              tooltip: item.expiryStatus == ExpiryStatus.expired ? 'Discard Expired Item' : 'Discard / Log Waste',
+              onPressed: () async {
+                final removed = await WasteRecordDialog.show(
+                  context,
+                  itemId: item.id,
+                  itemName: item.label,
+                  category: item.section,
+                  currentQty: item.qty,
+                  unit: 'item',
+                );
+                if (removed == true && context.mounted) {
+                  final t = context.read<AuthProvider>().token;
+                  context.read<ExpiryProvider>().fetchExpiryData(t);
+                }
+              },
             ),
           ],
         ),

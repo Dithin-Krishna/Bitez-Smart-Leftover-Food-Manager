@@ -14,6 +14,7 @@ import 'expiry_tracker_screen.dart';
 import 'barcode_scanner_screen.dart';
 import 'donations_screen.dart';
 import '../widgets/sync_conflict_banner.dart';
+import '../widgets/waste_record_dialog.dart';
 
 /// Realistic top-bottom double-door fridge.
 /// • TOP  = Freezer door – hinge LEFT, handle RIGHT, opens leftward (rotateY)
@@ -1450,47 +1451,28 @@ class _FridgeScreenState extends State<FridgeScreen>
     );
   }
 
-  // ── Confirm remove ─────────────────────────────────────────────────────────
-  void _confirmRemove(List<Map<String, dynamic>> list, int i) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2A40),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18)),
-        title: Text('Remove ${list[i]['label']}?',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w800)),
-        content: const Text('Out of stock. Remove from shelf?',
-            style: TextStyle(color: Colors.white60)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Keep',
-                  style: TextStyle(color: Colors.grey))),
-          TextButton(
-            onPressed: () async {
-              final item = list[i];
-              final id = item['_id']?.toString() ?? '';
-              final token = context.read<AuthProvider>().token;
-              
-              setState(() => list.removeAt(i));
-              Navigator.pop(ctx);
+  // ── Confirm remove or log waste ───────────────────────────────────────────
+  void _confirmRemove(List<Map<String, dynamic>> list, int i) async {
+    final item = list[i];
+    final id = item['_id']?.toString() ?? '';
+    final label = item['label']?.toString() ?? 'Item';
+    final section = item['section']?.toString() ?? 'Other';
+    final qty = (item['qty'] as num?)?.toInt() ?? 1;
+    final unit = item['unit']?.toString() ?? 'item';
 
-              if (id.isNotEmpty && token != null) {
-                try {
-                  await FridgeService.instance.deleteItem(token: token, id: id);
-                } catch (_) {}
-              }
-            },
-            child: const Text('Remove',
-                style: TextStyle(
-                    color: Colors.redAccent,
-                    fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
+    final removed = await WasteRecordDialog.show(
+      context,
+      itemId: id,
+      itemName: label,
+      category: section,
+      currentQty: qty,
+      unit: unit,
     );
+
+    if (removed == true && mounted) {
+      setState(() => list.removeAt(i));
+      _loadItems(showLoadingIndicator: false);
+    }
   }
 
   // ── Summary bar ────────────────────────────────────────────────────────────
