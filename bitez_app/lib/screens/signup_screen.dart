@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
-import '../widgets/server_status_indicator.dart';
 import 'home_screen.dart';
 
 /// Sign-up form: name, email, age, gender, phone number, then a Sign up
@@ -26,13 +25,6 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _loading = false;
   bool _obscurePassword = true;
 
-  @override
-  void initState() {
-    super.initState();
-    if (ApiService.connectionStatus.value != ServerConnectionStatus.connected) {
-      ApiService.instance.checkHealth();
-    }
-  }
 
   @override
   void dispose() {
@@ -83,17 +75,9 @@ class _SignupScreenState extends State<SignupScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF7EF),
       body: SafeArea(
-        child: Stack(
-          children: [
-            // 🚦 Connection status dot in TOP-LEFT corner
-            const Positioned(
-              top: 16,
-              left: 20,
-              child: ServerStatusIndicator(),
-            ),
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(28, 64, 28, 24),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 48, 28, 24),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -178,7 +162,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          value: _gender,
+                          initialValue: _gender,
                           style: const TextStyle(color: Colors.blue, fontSize: 16),
                           decoration: _fieldDecoration('Gender'),
                           items: const [
@@ -211,71 +195,28 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  ValueListenableBuilder<ServerConnectionStatus>(
-                    valueListenable: ApiService.connectionStatus,
-                    builder: (context, status, _) {
-                      final isConnected = status == ServerConnectionStatus.connected;
-                      final isConnecting = status == ServerConnectionStatus.connecting;
-
-                      VoidCallback? onPressed;
-                      String buttonLabel = 'Sign up';
-                      Color buttonColor = const Color(0xFF2A4E7C);
-
-                      if (_loading) {
-                        onPressed = null;
-                      } else if (isConnected) {
-                        onPressed = _submit;
-                        buttonLabel = 'Sign up';
-                        buttonColor = const Color(0xFF2A4E7C);
-                      } else if (isConnecting) {
-                        onPressed = () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('⏳ Connecting to server on Render... Please wait a few seconds.'),
-                              backgroundColor: Color(0xFFD97706),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2A4E7C),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 2,
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Sign up',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                             ),
-                          );
-                        };
-                        buttonLabel = 'Connecting to server...';
-                        buttonColor = const Color(0xFFD97706);
-                      } else {
-                        onPressed = () {
-                          ApiService.instance.checkHealth();
-                        };
-                        buttonLabel = 'Server Offline - Tap to Retry';
-                        buttonColor = const Color(0xFFDC2626);
-                      }
-
-                      return ElevatedButton(
-                        onPressed: onPressed,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: buttonColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (isConnecting) ...[
-                                    const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Text(buttonLabel),
-                                ],
-                              ),
-                      );
-                    },
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -304,10 +245,8 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ),
         ),
-      ],
-    ),
-  ),
-);
+      ),
+    );
   }
 
   InputDecoration _fieldDecoration(String hint, {Widget? suffixIcon}) {

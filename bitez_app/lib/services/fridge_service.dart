@@ -24,6 +24,97 @@ class FridgeService {
     fridgeUpdatedNotifier.value++;
   }
 
+  // ── GET /api/fridge ────────────────────────────────────────────────────────
+  /// Returns items grouped by section key.
+  /// Uses server data when online and updates local cache.
+  /// Falls back to Hive cache when offline.
+  Future<Map<String, List<Map<String, dynamic>>>> getGrouped(String token) async {
+    SyncService.instance.setAuthToken(token);
+    try {
+      final json = await ApiService.instance.get('/api/fridge', token: token);
+      final raw  = (json['grouped'] as Map<String, dynamic>?) ?? {};
+      final grouped = raw.map((section, list) {
+        final items = ((list as List?) ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        return MapEntry(section, items);
+      });
+
+      final flatList = (json['items'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      // Update offline cache
+      await OfflineStorageService.instance.cacheFridgeData(
+        grouped: grouped,
+        items: flatList,
+      );
+
+      return grouped;
+    } catch (e) {
+      debugPrint('FridgeService.getGrouped: Server unreachable ($e). Checking offline cache...');
+      final cached = OfflineStorageService.instance.getCachedGroupedFridge();
+      if (cached != null) {
+        return cached;
+      }
+      rethrow;
+    }
+  }
+
+  /// Returns flat list of all fridge items for the user.
+  Future<List<Map<String, dynamic>>> getAllItems({required String token}) async {
+    SyncService.instance.setAuthToken(token);
+    try {
+      final json = await ApiService.instance.get('/api/fridge', token: token);
+      final rawList = json['items'] as List<dynamic>? ?? [];
+      final flat = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      final rawGrouped = (json['grouped'] as Map<String, dynamic>?) ?? {};
+      final grouped = rawGrouped.map((section, list) {
+        final items = ((list as List?) ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        return MapEntry(section, items);
+      });
+
+      await OfflineStorageService.instance.cacheFridgeData(
+        grouped: grouped,
+        items: flat,
+      );
+
+      return flat;
+    } catch (e) {
+      final cached = OfflineStorageService.instance.getCachedFlatFridge();
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+
+  // ── POST /api/fridge ───────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> addItem({
+    required String token,
+    required String emoji,
+    required String label,
+    required int qty,
+    required int color,
+    required String section,
+    DateTime? expiresAt,
+  }) async {
+    SyncService.instance.setAuthToken(token);
+    final payload = {
+      'emoji': emoji,
+      'label': label,
+      'qty': qty,
+      'color': color,
+      'section': section,
+      if (expiresAt != null) 'expiresAt': expiresAt.toIso8601String(),
+    };
+
+    try {
+      final json = await ApiService.instance.post('/api/fridge', payload, token: token);
+      final item = Map<String, dynamic>.from(json['item'] as Map);
+      _updateLocalCacheAddItem(item);
+      notifyFridgeChanged();
       return item;
     } catch (e) {
       // Offline fallback: create local item and queue sync operation
@@ -42,6 +133,27 @@ class FridgeService {
       );
 
       notifyFridgeChanged();
+      return localItem;
+    }
+  }
+
+  // ── PATCH /api/fridge/:id/qty ──────────────────────────────────────────────
+  Future<Map<String, dynamic>> updateQty({
+    required String token,
+    required String id,
+    required int delta,
+    String? itemLabel,
+  }) async {
+    SyncService.instance.setAuthToken(token);
+    try {
+      final json = await ApiService.instance.patch(
+        '/api/fridge/$id/qty',
+        {'delta': delta},
+        token: token,
+      );
+      final item = Map<String, dynamic>.from(json['item'] as Map);
+      _updateLocalCacheQty(id, (item['qty'] as num).toInt());
+      notifyFridgeChanged();
       return item;
     } catch (e) {
       // Offline fallback
@@ -55,6 +167,23 @@ class FridgeService {
         },
       );
       notifyFridgeChanged();
+      return {'_id': id, 'qty': updatedQty};
+    }
+  }
+
+  // ── POST /api/fridge/bulk ──────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> addBulkItems({
+    required String token,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    SyncService.instance.setAuthToken(token);
+    final json = await ApiService.instance.post(
+      '/api/fridge/bulk',
+      {'items': items},
+      token: token,
+    );
+    final rawList = json['items'] as List<dynamic>? ?? [];
+    notifyFridgeChanged();
     return rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
@@ -87,6 +216,15 @@ class FridgeService {
         '/api/fridge/deduct',
         payload,
         token: token,
+      );
+      notifyFridgeDeducted();
+      return result;
+    } catch (e) {
+      // Offline / network fallback: queue mutation
+      debugPrint('FridgeService.deductItems: Server unreachable ($e). Changes applied locally and queued.');
+      await SyncService.instance.queueMutation(
+        type: SyncOpType.deductFridgeItems,
+        payload: payload,
       );
       notifyFridgeDeducted();
       return {'success': true, 'offline': true};
@@ -156,6 +294,14 @@ class FridgeService {
     try {
       await ApiService.instance.delete('/api/fridge/$id', token: token);
       _removeLocalCacheItem(id);
+      notifyFridgeChanged();
+    } catch (e) {
+      // Offline: remove locally and queue sync
+      _removeLocalCacheItem(id);
+      await SyncService.instance.queueMutation(
+        type: SyncOpType.deleteFridgeItem,
+        payload: {'id': id, 'label': itemLabel ?? 'Item'},
+      );
       notifyFridgeChanged();
     }
   }

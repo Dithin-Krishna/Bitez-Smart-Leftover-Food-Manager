@@ -15,7 +15,7 @@ class ApiException implements Exception {
 
 /// Connection status to the backend server.
 enum ServerConnectionStatus {
-  connecting,   // 🟡 Yellow: in progress (probing or waking up Render)
+  connecting,   // 🟡 Yellow: in progress (probing backend server)
   connected,    // 🟢 Green: connected and ready
   disconnected, // 🔴 Red: could not connect / offline
 }
@@ -49,8 +49,8 @@ class ApiService {
   /// Allow setting a custom base URL dynamically.
   static String? customBaseUrl;
 
-  /// Production Cloud URL on Render
-  static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
+  /// Production Cloud URL (re-enable once deployed)
+  // static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
 
   /// Host IP on local Wi-Fi for physical devices (local fallback)
   static const String _hostWifiIp = '10.107.38.211';
@@ -58,11 +58,11 @@ class ApiService {
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
   static List<String> _defaultCandidates() {
-    if (kIsWeb) return [liveCloudUrl, 'http://localhost:3000', 'http://127.0.0.1:3000'];
+    if (kIsWeb) return ['http://localhost:3000', 'http://127.0.0.1:3000'];
     try {
       if (Platform.isAndroid) {
         return [
-          liveCloudUrl,                     // 🚀 Production cloud backend (Always online anywhere)
+          // liveCloudUrl,                     // 🚀 Production cloud backend (Always online anywhere)
           'http://127.0.0.1:3000',          // Works via ADB reverse over USB (Instant local fallback)
           'http://localhost:3000',          // Works via ADB reverse
           'http://$_hostWifiIp:3000',       // Host Wi-Fi IP
@@ -70,7 +70,7 @@ class ApiService {
         ];
       }
     } catch (_) {}
-    return [liveCloudUrl, 'http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
+    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

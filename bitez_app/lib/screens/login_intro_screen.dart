@@ -2145,7 +2145,6 @@ import '../services/api_service.dart';
 import '../widgets/bowl_painter.dart';
 import '../widgets/steam_painter.dart';
 import '../widgets/smoke_text_formation.dart';
-import '../widgets/server_status_indicator.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
@@ -2185,9 +2184,6 @@ class _LoginIntroScreenState extends State<LoginIntroScreen>
   @override
   void initState() {
     super.initState();
-
-    // Probe / wake up Render backend as soon as app opens
-    ApiService.instance.checkHealth();
 
     _main = AnimationController(
       vsync: this,
@@ -2450,13 +2446,6 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
   bool _loading = false;
   bool _obscurePassword = true;
 
-  @override
-  void initState() {
-    super.initState();
-    if (ApiService.connectionStatus.value != ServerConnectionStatus.connected) {
-      ApiService.instance.checkHealth();
-    }
-  }
 
   @override
   void dispose() {
@@ -2501,18 +2490,10 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Stack(
-        children: [
-          // 🚦 Connection status indicator in TOP-LEFT corner
-          const Positioned(
-            top: 16,
-            left: 20,
-            child: ServerStatusIndicator(),
-          ),
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
@@ -2581,76 +2562,29 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
                 ),
               ),
               const SizedBox(height: 16),
-              // 🚦 Status-aware Login Button
-              ValueListenableBuilder<ServerConnectionStatus>(
-                valueListenable: ApiService.connectionStatus,
-                builder: (context, status, _) {
-                  final isConnected = status == ServerConnectionStatus.connected;
-                  final isConnecting = status == ServerConnectionStatus.connecting;
-
-                  VoidCallback? onPressed;
-                  String buttonLabel = 'Log in';
-                  Color buttonColor = const Color(0xFF2A4E7C);
-
-                  if (_loading) {
-                    onPressed = null;
-                  } else if (isConnected) {
-                    onPressed = _login;
-                    buttonLabel = 'Log in';
-                    buttonColor = const Color(0xFF2A4E7C);
-                  } else if (isConnecting) {
-                    onPressed = () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('⏳ Connecting to server on Render... Please wait a few seconds.'),
-                          backgroundColor: Color(0xFFD97706),
+              // Login Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A4E7C),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 2,
+                  ),
+                  child: _loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text(
+                          'Log in',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                         ),
-                      );
-                    };
-                    buttonLabel = 'Connecting to server...';
-                    buttonColor = const Color(0xFFD97706);
-                  } else {
-                    // disconnected / red
-                    onPressed = () {
-                      ApiService.instance.checkHealth();
-                    };
-                    buttonLabel = 'Server Offline - Tap to Retry';
-                    buttonColor = const Color(0xFFDC2626);
-                  }
-
-                  return SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: onPressed,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: buttonColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                if (isConnecting) ...[
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Text(buttonLabel),
-                              ],
-                            ),
-                    ),
-                  );
-                },
+                ),
               ),
               const SizedBox(height: 14),
               GestureDetector(
@@ -2676,8 +2610,6 @@ class _LoginScreenContentState extends State<_LoginScreenContent> {
           ),
         ),
       ),
-    ],
-  ),
-);
+    );
   }
 }

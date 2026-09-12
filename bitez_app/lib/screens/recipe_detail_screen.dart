@@ -3,6 +3,75 @@ import 'package:provider/provider.dart';
 import '../models/recipe_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/expiry_provider.dart';
+import '../providers/saved_recipes_provider.dart';
+import '../services/fridge_service.dart';
+import '../services/grocery_service.dart';
+import '../services/recipe_service.dart';
+import '../services/meal_planner_service.dart';
+
+class RecipeDetailScreen extends StatefulWidget {
+  final RecipeModel recipe;
+
+  const RecipeDetailScreen({super.key, required this.recipe});
+
+  @override
+  State<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
+}
+
+class _RecipeDetailScreenState extends State<RecipeDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late RecipeModel _detail;
+  bool _loading = true;
+  late TabController _tabController;
+
+  // Interactive step checking state
+  final Set<int> _completedSteps = {};
+  final Set<String> _checkedIngredients = {};
+
+  // ── Feature 1: Fridge matching state ────────────────────────────────────────
+  List<Map<String, dynamic>> _fridgeItems = [];
+  bool _fridgeLoaded = false;
+  bool _deducting = false;
+
+  // ── Feature 2: Grocery export state ─────────────────────────────────────────
+  bool _addingToGrocery = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _detail = widget.recipe;
+    _tabController = TabController(length: 3, vsync: this);
+    _fetchDetails();
+    _loadFridgeItems();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchDetails() async {
+    if (_detail.instructions.isNotEmpty && _detail.readyInMinutes != null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    try {
+      final fetched = await RecipeService.instance.getRecipeInformation(widget.recipe.id);
+      if (mounted) {
+        setState(() {
+          final cleanFetchedUsed = fetched.usedIngredients
+              .where((i) => !['main ingredients', 'salt & pepper'].contains(i.toLowerCase().trim()))
+              .toList();
+          final mergedUsed = {
+            ...widget.recipe.usedIngredients,
+            ...cleanFetchedUsed,
+          }.toList();
+
+          _detail = fetched.copyWith(
+            usedIngredients: mergedUsed.isNotEmpty ? mergedUsed : fetched.usedIngredients,
+          );
           _loading = false;
         });
       }
@@ -134,6 +203,107 @@ import '../providers/expiry_provider.dart';
         } catch (_) {}
       }
 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Deducted ${result.length} ingredient${result.length == 1 ? "" : "s"} from your fridge!'),
+            backgroundColor: const Color(0xFF2A4E7C),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to deduct items: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deducting = false);
+    }
+  }
+
+  // ── Feature 2: Add missing ingredients to grocery list ─────────────────────
+  Future<void> _addMissingToGrocery() async {
+    final missing = _detail.missedIngredients;
+    if (missing.isEmpty) return;
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    setState(() => _addingToGrocery = true);
+
+    try {
+      // Extract clean ingredient names for grocery list
+      final items = missing.map((ing) {
+        // Try to extract just the ingredient name from strings like "2 cups flour"
+        final cleanName = _extractIngredientName(ing);
+        return {'label': cleanName, 'qty': 1};
+      }).toList();
+
+      final response = await GroceryService.instance.addBulkItems(
+        token: token,
+        items: items,
+      );
+
+      if (mounted) {
+        final addedCount = response['addedCount'] ?? 0;
+        final updatedCount = response['updatedCount'] ?? 0;
+        String message;
+        if (addedCount > 0 && updatedCount > 0) {
+          message = '🛒 Added $addedCount new + updated $updatedCount existing item(s) in Grocery List!';
+        } else if (updatedCount > 0) {
+          message = '🛒 Updated $updatedCount existing item(s) in Grocery List!';
+        } else {
+          message = '🛒 Added $addedCount item(s) to Grocery List!';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add to grocery list: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _addingToGrocery = false);
+    }
+  }
+
+  /// Extract core ingredient name from recipe strings like "2 large eggs" → "Eggs"
+  String _extractIngredientName(String raw) {
+    // Remove leading quantities and measurements
+    String cleaned = raw.replaceAll(RegExp(r'^[\d/.\s]+'), '');
+    // Remove common measurement words
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^(cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|grams?|kg|ml|liters?|large|medium|small|pieces?|slices?|cloves?|cans?|bunch|pinch|dash)\s+', caseSensitive: false),
+      '',
+    );
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\(.*?\)\s*'), '');
+    cleaned = cleaned.trim();
+    if (cleaned.isEmpty) cleaned = raw.trim();
+    // Capitalize first letter
+    if (cleaned.isNotEmpty) {
+      cleaned = cleaned[0].toUpperCase() + cleaned.substring(1);
+    }
+    return cleaned;
+  }
+
+  Future<void> _showCookingModeModal() async {
+    if (_detail.instructions.isEmpty) return;
+
+    final finished = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -144,6 +314,162 @@ import '../providers/expiry_provider.dart';
       // Auto-trigger deduction after finishing cooking
       await _showDeductionDialog();
     }
+  }
+
+  Future<void> _showPinToMealPlanDialog() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    String selectedDay = 'monday';
+    String mealType = 'dinner';
+
+    final days = {
+      'monday': 'Monday',
+      'tuesday': 'Tuesday',
+      'wednesday': 'Wednesday',
+      'thursday': 'Thursday',
+      'friday': 'Friday',
+      'saturday': 'Saturday',
+      'sunday': 'Sunday',
+    };
+
+    final pinned = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: const Color(0xFF16253D),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.calendar_month_rounded, color: Color(0xFF4A90C4)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Pin to Meal Plan',
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add "${_detail.title}" to your weekly schedule:',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              const Text('Day of the Week', style: TextStyle(color: Colors.white60, fontSize: 12)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedDay,
+                    dropdownColor: const Color(0xFF16253D),
+                    isExpanded: true,
+                    items: days.entries
+                        .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(color: Colors.white))))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setDlgState(() => selectedDay = val);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Meal Type', style: TextStyle(color: Colors.white60, fontSize: 12)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: mealType,
+                    dropdownColor: const Color(0xFF16253D),
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: 'breakfast', child: Text('🥞 Breakfast', style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'lunch',     child: Text('🥪 Lunch',     style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'dinner',    child: Text('🍽️ Dinner',    style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(value: 'snack',     child: Text('🍎 Snack',     style: TextStyle(color: Colors.white))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setDlgState(() => mealType = val);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2A4E7C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                try {
+                  final allIngredients = [
+                    ..._detail.usedIngredients,
+                    ..._detail.missedIngredients,
+                  ];
+                  await MealPlannerService.instance.pinRecipe(
+                    token: token,
+                    dayOfWeek: selectedDay,
+                    recipeTitle: _detail.title,
+                    recipeId: _detail.id.toString(),
+                    imageUrl: _detail.image,
+                    ingredients: allIngredients,
+                    cookTime: _detail.readyInMinutes ?? 20,
+                    mealType: mealType,
+                    servings: _detail.servings ?? 2,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } catch (_) {
+                  if (ctx.mounted) Navigator.pop(ctx, false);
+                }
+              },
+              child: const Text('Pin Recipe'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (pinned == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📌 Pinned to ${days[selectedDay]}!'),
+          backgroundColor: const Color(0xFF2A4E7C),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primary = theme.colorScheme.primary;
+
+    final savedProvider = context.watch<SavedRecipesProvider>();
+    final isSaved = savedProvider.isSaved(_detail.id);
+
+    final hasMatchedItems = _fridgeLoaded && _fridgeItems.isNotEmpty;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,

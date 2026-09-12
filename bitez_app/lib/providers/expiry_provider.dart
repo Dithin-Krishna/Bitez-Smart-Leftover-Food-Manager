@@ -24,7 +24,6 @@ class ExpiryProvider extends ChangeNotifier {
 
   bool get hasUrgentAlerts => expiredCount > 0 || expiringSoonCount > 0;
 
-<<<<<<< HEAD
   /// Returns near-to-expire foods, veggies, and fruits from fridge inventory.
   /// Prioritizes expiringSoon & expired items, followed by produce (veggies & fruits)
   /// with closest expiry dates.
@@ -55,8 +54,6 @@ class ExpiryProvider extends ChangeNotifier {
     return [...urgent, ...produceTracked, ...produceOther, ...otherTracked];
   }
 
-=======
->>>>>>> 8b2d68f358bbaab9c28445b8e32c1b52533ce83a
   List<FridgeItemModel> get filteredItems {
     switch (_activeFilter) {
       case 'expired':

@@ -56,7 +56,7 @@ class _ServerStatusIndicatorState extends State<ServerStatusIndicator>
           case ServerConnectionStatus.connecting:
             dotColor = const Color(0xFFF59E0B); // Amber / Yellow
             label = 'Connecting to server...';
-            tooltip = 'Connecting / waking up server on Render...';
+            tooltip = 'Connecting to server...';
             break;
           case ServerConnectionStatus.connected:
             dotColor = const Color(0xFF10B981); // Emerald / Green

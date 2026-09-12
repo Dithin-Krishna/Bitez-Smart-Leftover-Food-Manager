@@ -3,12 +3,18 @@ const User         = require('../models/User');
 const sendEmail    = require('./email');
 const alertService = require('./alertService');
 
+const mongoose    = require('mongoose');
+
 /**
  * Checks all fridge items in MongoDB for items expiring within the next 24-48 hours,
  * groups them by user, and sends a notification email to each user.
  */
 async function checkAndSendExpiryNotifications() {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      console.log('ℹ️ Database offline; skipping scheduled expiry check.');
+      return { count: 0, usersNotified: 0 };
+    }
     console.log('⏰ Running Expiry Notification Scheduler check...');
 
     const now = new Date();

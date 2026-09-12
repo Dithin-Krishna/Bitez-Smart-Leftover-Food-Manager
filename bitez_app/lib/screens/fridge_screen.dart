@@ -99,6 +99,36 @@ class _FridgeScreenState extends State<FridgeScreen>
     if (mounted) {
       _loadItems(showLoadingIndicator: false);
     }
+  }
+
+  String? _lastToken;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final token = context.watch<AuthProvider>().token;
+    if (token != _lastToken) {
+      _lastToken = token;
+      if (token != null) {
+        _loadItems();
+      } else {
+        setState(() {
+          _frozen = [];
+          _dairy  = [];
+          _vegs   = [];
+          _fruits = [];
+        });
+      }
+    }
+  }
+
+  Future<void> _loadItems({bool showLoadingIndicator = true}) async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      if (showLoadingIndicator) {
+        setState(() { _loadingItems = true; _loadError = null; });
+      }
       final grouped = await FridgeService.instance.getGrouped(token);
       if (!mounted) return;
 
@@ -180,6 +210,228 @@ class _FridgeScreenState extends State<FridgeScreen>
   @override
   void dispose() {
     FridgeService.instance.fridgeDeductionNotifier.removeListener(_onFridgeDeducted);
+    _topCtrl.dispose();
+    _botCtrl.dispose();
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleTop() {
+    if (_topCtrl.isAnimating) return;
+    _topOpen ? _topCtrl.reverse() : _topCtrl.forward();
+  }
+
+  void _toggleBot() {
+    if (_botCtrl.isAnimating) return;
+    _botOpen ? _botCtrl.reverse() : _botCtrl.forward();
+  }
+
+  Future<void> _changeQty(
+      List<Map<String, dynamic>> list, int i, int d) async {
+    HapticFeedback.lightImpact();
+    final item = list[i];
+    final newQty = ((item['qty'] as int) + d).clamp(0, 999);
+    setState(() => item['qty'] = newQty);
+
+    final id    = item['_id']?.toString() ?? '';
+    final token = context.read<AuthProvider>().token;
+    if (id.isEmpty || token == null) return; // offline / demo item
+    try {
+      await FridgeService.instance.updateQty(
+        token: token,
+        id: id,
+        delta: d,
+        itemLabel: item['label']?.toString(),
+      );
+    } catch (_) {
+      // Revert if even offline queue fails
+      if (mounted) setState(() => item['qty'] = (item['qty'] as int) - d);
+    }
+  }
+
+  Future<void> _scanFoodAI() async {
+    try {
+      final token = context.read<AuthProvider>().token;
+      final picker = ImagePicker();
+      final xfile = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      if (xfile == null) return;
+      final file = File(xfile.path);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🔍 AI is analyzing image with YOLO & Gemini Vision...'),
+          backgroundColor: _appIndigo,
+        ),
+      );
+
+      // Phase 2, 3, 4: Hybrid recognition pipeline
+      final pipelineResults = await FoodRecognitionService.instance.recognizeFoodPipeline(file, token: token);
+
+      if (!mounted) return;
+
+      if (pipelineResults.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ No food items detected in image. Please try taking a clearer photo of food.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Phase 5: User Confirmation Dialog
+      final confirmedItems = await FoodConfirmationDialog.show(
+        context,
+        imageFile: file,
+        detectedItems: pipelineResults,
+      );
+
+      if (!mounted || confirmedItems == null || confirmedItems.isEmpty) return;
+
+      // Phase 6: Save to Virtual Fridge MongoDB
+      if (token != null) {
+        final payload = confirmedItems.map((item) => {
+          'emoji': item.emoji,
+          'label': item.label,
+          'qty': item.qty,
+          'color': 0xFF2A4E7C,
+          'section': item.section,
+        }).toList();
+
+        await FridgeService.instance.addBulkItems(token: token, items: payload);
+        await _loadItems(); // Refresh inventory live
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Added ${confirmedItems.length} food item${confirmedItems.length == 1 ? "" : "s"} to fridge!'),
+            backgroundColor: _appIndigo,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Scan error: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Root ───────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bodyBg,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _scanFoodAI,
+        backgroundColor: const Color(0xFF4A90C4),
+        icon: const Icon(Icons.center_focus_strong, color: Colors.white),
+        label: const Text(
+          'Scan Food (AI)',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: SafeArea(
+        child: Stack(children: [
+          Column(children: [
+            _topBar(),
+            const SyncConflictBanner(),
+            Expanded(child: _fridgeUnit()),
+            _totalBar(),
+          ]),
+          // Loading overlay
+          if (_loadingItems)
+            Container(
+              color: _bodyBg.withValues(alpha: 0.75),
+              child: const Center(
+                child: CircularProgressIndicator(color: Color(0xFF4A90C4)),
+              ),
+            ),
+          // Error overlay
+          if (_loadError != null && !_loadingItems)
+            Container(
+              color: _bodyBg.withValues(alpha: 0.85),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, color: Colors.white54, size: 42),
+                    const SizedBox(height: 12),
+                    Text(
+                      _loadError!,
+                      style: const TextStyle(color: Colors.white60, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadItems,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2A4E7C),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ]),
+      ),
+
+    );
+  }
+
+  // ── App bar ────────────────────────────────────────────────────────────────
+  Widget _topBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'My Fridge',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${_topOpen ? "❄️ Freezer open" : "❄️ Tap freezer"} • ${_botOpen ? "🥗 Fridge open" : "🥗 Tap fridge"}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 18),
+            tooltip: 'Refresh Fridge',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.all(6),
+              minimumSize: const Size(36, 36),
+            ),
+            onPressed: _loadItems,
+          ),
+          const SizedBox(width: 4),
+          IconButton(
             icon: const Icon(Icons.timer_outlined, color: Colors.orangeAccent, size: 18),
             tooltip: 'Expiry Tracker & Vault',
             style: IconButton.styleFrom(

@@ -32,14 +32,18 @@ app.use('/api', apiLimiter);
 
 // ── MongoDB Atlas Connection ───────────────────────────────────────────────────
 const connectDB = async () => {
+  if (!process.env.MONGO_URI) {
+    console.warn('⚠️  MONGO_URI is not defined in .env');
+    return;
+  }
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
     });
     console.log('✅  MongoDB Atlas connected successfully');
   } catch (err) {
-    console.error('❌  MongoDB connection failed:', err.message);
-    process.exit(1);
+    console.error('⚠️  MongoDB connection failed:', err.message);
+    console.log('💡  Server will continue running in local mode. Verify database credentials in .env.');
   }
 };
 connectDB();

@@ -36,7 +36,6 @@ class RecipeModel {
     this.searchedIngredientCount = 1,
   });
 
-<<<<<<< HEAD
   RecipeModel copyWith({
     int? id,
     String? title,
@@ -75,8 +74,6 @@ class RecipeModel {
     );
   }
 
-=======
->>>>>>> 8b2d68f358bbaab9c28445b8e32c1b52533ce83a
   int get totalIngredients => usedIngredientCount + missedIngredientCount;
 
   /// Calculate match percentage based on missing extra ingredients.
