@@ -71,6 +71,7 @@ app.use('/api/grocery', require('./routes/grocery'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/meal-planner', require('./routes/mealPlanner'));
 app.use('/api/waste', require('./routes/waste'));
+app.use('/api/donations', require('./routes/donations'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
