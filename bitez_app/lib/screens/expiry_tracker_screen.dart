@@ -4,39 +4,6 @@ import '../models/fridge_item_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/expiry_provider.dart';
 import '../services/fridge_service.dart';
-import '../widgets/expiry_scan_dialog.dart';
-import '../widgets/expiry_vault_dialog.dart';
-import 'recipe_results_screen.dart';
-
-class ExpiryTrackerScreen extends StatefulWidget {
-  const ExpiryTrackerScreen({super.key});
-
-  @override
-  State<ExpiryTrackerScreen> createState() => _ExpiryTrackerScreenState();
-}
-
-class _ExpiryTrackerScreenState extends State<ExpiryTrackerScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final token = context.read<AuthProvider>().token;
-      context.read<ExpiryProvider>().fetchExpiryData(token);
-    });
-    FridgeService.instance.fridgeUpdatedNotifier.addListener(_onFridgeUpdated);
-  }
-
-  void _onFridgeUpdated() {
-    if (mounted) {
-      final token = context.read<AuthProvider>().token;
-      context.read<ExpiryProvider>().fetchExpiryData(token);
-    }
-  }
-
-  @override
-  void dispose() {
-    FridgeService.instance.fridgeUpdatedNotifier.removeListener(_onFridgeUpdated);
-    super.dispose();
   }
 
   void _generateRecipeWithExpiringItems(List<FridgeItemModel> items) {
@@ -115,25 +82,6 @@ class _ExpiryTrackerScreenState extends State<ExpiryTrackerScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final provider = context.watch<ExpiryProvider>();
-    final token = context.read<AuthProvider>().token;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.timer_outlined, color: Color(0xFF2A4E7C)),
-            SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Expiry Vault',
-                style: TextStyle(fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
           ],
         ),
         actions: [
@@ -143,31 +91,6 @@ class _ExpiryTrackerScreenState extends State<ExpiryTrackerScreen> {
             tooltip: 'Prepare Recipes from Near-to-Expire Produce',
           ),
           IconButton(
-            onPressed: () => provider.fetchExpiryData(token),
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            onPressed: () => ExpiryScanDialog.show(context),
-            icon: const Icon(Icons.document_scanner_outlined),
-            tooltip: 'Scan Expiry Label',
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => provider.fetchExpiryData(token),
-        child: provider.isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : CustomScrollView(
-                slivers: [
-                  // ── Prominent Banner: Prepare Recipes from Near-to-Expire Foods, Veg, Fruits ──
-                  SliverToBoxAdapter(
-                    child: _NearExpiryRecipeBanner(
-                      nearProduce: provider.getNearExpiryProduce(),
-                      allItems: provider.items,
-                      onTap: () => _openPrepareRecipesSheet(provider.items),
-                    ),
-                  ),
                   if (provider.hasUrgentAlerts)
                     SliverToBoxAdapter(
                       child: Container(
@@ -608,6 +531,7 @@ class _ExpiryItemCard extends StatelessWidget {
     );
   }
 }
+<<<<<<< HEAD
 
 // ── Prominent Banner Card: Prepare Recipes with Near-to-Expire Foods ─────────
 class _NearExpiryRecipeBanner extends StatelessWidget {
@@ -932,3 +856,5 @@ class _PrepareRecipesSheetState extends State<_PrepareRecipesSheet> {
 }
 }
 
+=======
+>>>>>>> 8b2d68f358bbaab9c28445b8e32c1b52533ce83a
