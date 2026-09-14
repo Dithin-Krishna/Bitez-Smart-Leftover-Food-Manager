@@ -10,15 +10,28 @@ const signToken = (userId) =>
   });
 
 // ── Helper: strip sensitive fields and return safe user object ────────────────
-const safeUser = (user) => ({
-  id:     user._id,
-  name:   user.name,
-  email:  user.email,
-  age:    user.age,
-  gender: user.gender,
-  phone:  user.phone,
-  avatarUrl: user.avatarUrl,
-});
+const safeUser = (user) => {
+  const adminEmails = [
+    (process.env.ADMIN_ALERT_EMAIL || '').toLowerCase().trim(),
+    (process.env.EMAIL_USER || '').toLowerCase().trim(),
+    'admin@bitez.app',
+  ].filter(Boolean);
+
+  const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase().trim());
+  const isAdmin = user.role === 'admin' || isEmailAdmin;
+
+  return {
+    id:        user._id,
+    name:      user.name,
+    email:     user.email,
+    role:      isAdmin ? 'admin' : (user.role || 'user'),
+    isAdmin,
+    age:       user.age,
+    gender:    user.gender,
+    phone:     user.phone,
+    avatarUrl: user.avatarUrl,
+  };
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/register

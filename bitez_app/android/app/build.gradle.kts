@@ -43,3 +43,22 @@ dependencies {
 flutter {
     source = "../.."
 }
+
+val reversePortForward = tasks.register("reversePortForward") {
+    doLast {
+        try {
+            ProcessBuilder("adb", "reverse", "tcp:3000", "tcp:3000").start()
+            println("🔗 [Bitez] Reversed port: adb reverse tcp:3000 tcp:3000")
+        } catch (_: Exception) {
+            // Ignore if device not connected or adb not found
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("Debug", ignoreCase = true) &&
+        (name.startsWith("assemble") || name.startsWith("install") || name.startsWith("flutterBuild"))) {
+        dependsOn(reversePortForward)
+    }
+}
+

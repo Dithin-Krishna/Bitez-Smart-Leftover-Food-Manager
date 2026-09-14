@@ -7,6 +7,9 @@ class UserModel {
   final String? gender;
   final String? phone;
   final String? avatarUrl;
+  final String role;
+
+  bool get isAdmin => role == 'admin';
 
   const UserModel({
     required this.id,
@@ -16,6 +19,7 @@ class UserModel {
     this.gender,
     this.phone,
     this.avatarUrl,
+    this.role = 'user',
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -27,6 +31,7 @@ class UserModel {
       gender:    json['gender']?.toString(),
       phone:     json['phone']?.toString(),
       avatarUrl: json['avatarUrl']?.toString(),
+      role:      json['role']?.toString() ?? (json['isAdmin'] == true ? 'admin' : 'user'),
     );
   }
 }

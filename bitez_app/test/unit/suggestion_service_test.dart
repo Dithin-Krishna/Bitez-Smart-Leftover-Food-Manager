@@ -15,12 +15,15 @@ void main() {
         'rating': 5,
         'status': 'planned',
         'userName': 'Chef Alex',
+        'userEmail': 'alex@example.com',
+        'userId': 'user_999',
         'createdAt': '2026-09-14T10:00:00.000Z',
       };
 
       final suggestion = AppSuggestion.fromJson(json);
 
       expect(suggestion.id, equals('sug_123'));
+      expect(suggestion.userId, equals('user_999'));
       expect(suggestion.title, equals('Add smart fridge widgets'));
       expect(suggestion.category, equals('feature'));
       expect(suggestion.categoryDisplayName, equals('Feature Request'));
@@ -28,6 +31,7 @@ void main() {
       expect(suggestion.statusDisplayName, contains('Planned'));
       expect(suggestion.rating, equals(5));
       expect(suggestion.userName, equals('Chef Alex'));
+      expect(suggestion.userEmail, equals('alex@example.com'));
     });
 
     test('Handles default fallbacks gracefully', () {
@@ -88,6 +92,53 @@ void main() {
       final list = await service.getLocalSuggestions();
       expect(list.isNotEmpty, isTrue);
       expect(list.first.title, equals('Voice cooking timer'));
+    });
+
+    test('Isolates cached suggestions between different users', () async {
+      final service = SuggestionService.instance;
+
+      // User 1 submits
+      await service.submitSuggestion(
+        userId: 'user_1',
+        title: 'User 1 suggestion',
+        description: 'Private suggestion from user 1',
+        category: 'feature',
+        rating: 5,
+      );
+
+      // User 2 submits
+      await service.submitSuggestion(
+        userId: 'user_2',
+        title: 'User 2 suggestion',
+        description: 'Private suggestion from user 2',
+        category: 'feature',
+        rating: 5,
+      );
+
+      // User 1 must only see User 1's suggestions
+      final user1List = await service.getLocalSuggestions(userId: 'user_1');
+      expect(user1List.length, equals(1));
+      expect(user1List.first.title, equals('User 1 suggestion'));
+
+      // User 2 must only see User 2's suggestions
+      final user2List = await service.getLocalSuggestions(userId: 'user_2');
+      expect(user2List.length, equals(1));
+      expect(user2List.first.title, equals('User 2 suggestion'));
+
+      // Deleting user 1's suggestion
+      final deleted = await service.deleteSuggestion(
+        id: user1List.first.id,
+        token: '',
+        userId: 'user_1',
+      );
+      expect(deleted, isTrue);
+
+      final user1After = await service.getLocalSuggestions(userId: 'user_1');
+      expect(user1After.isEmpty, isTrue);
+
+      // User 2's suggestion is untouched
+      final user2After = await service.getLocalSuggestions(userId: 'user_2');
+      expect(user2After.length, equals(1));
     });
   });
 }
