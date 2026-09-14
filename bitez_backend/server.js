@@ -50,7 +50,7 @@ connectDB();
 
 // ── Database Readiness Guard ──────────────────────────────────────────────────
 // Immediately respond with 503 instead of hanging on Mongoose query buffering
-app.use(['/api/auth', '/api/fridge', '/api/user', '/api/grocery', '/api/analytics', '/api/meal-planner', '/api/waste'], (req, res, next) => {
+app.use(['/api/auth', '/api/fridge', '/api/user', '/api/grocery', '/api/analytics', '/api/meal-planner', '/api/waste', '/api/suggestions', '/api/donations'], (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({
       success: false,
@@ -72,6 +72,7 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/meal-planner', require('./routes/mealPlanner'));
 app.use('/api/waste', require('./routes/waste'));
 app.use('/api/donations', require('./routes/donations'));
+app.use('/api/suggestions', require('./routes/suggestions'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

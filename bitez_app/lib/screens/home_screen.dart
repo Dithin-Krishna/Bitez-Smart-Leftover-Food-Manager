@@ -20,6 +20,7 @@ import 'expiry_tracker_screen.dart';
 import 'analytics_dashboard_screen.dart';
 import 'meal_planner_screen.dart';
 import 'donations_screen.dart';
+import 'app_suggestion_screen.dart';
 import '../providers/expiry_provider.dart';
 import '../widgets/sync_status_banner.dart';
 
@@ -931,9 +932,15 @@ class _HomeScreenState extends State<HomeScreen> {
             Divider(height: 1, color: theme.dividerColor),
 
             ListTile(
-              leading: Icon(Icons.settings_outlined, color: primary),
-              title: Text('Settings', style: TextStyle(color: theme.colorScheme.onSurface)),
-              onTap: () => Navigator.pop(context),
+              leading: Icon(Icons.lightbulb_outline, color: primary),
+              title: Text('Suggestion for App', style: TextStyle(color: theme.colorScheme.onSurface)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AppSuggestionScreen()),
+                );
+              },
             ),
 
             ListTile(

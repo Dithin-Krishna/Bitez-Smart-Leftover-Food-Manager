@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/user_prefs_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/avatar_widget.dart';
+import 'app_suggestion_screen.dart';
 
 const List<String> _kFoodEmojis = [
   '🍕', '🍔', '🌮', '🌯', '🥗', '🍣', '🍜', '🍛',
@@ -192,7 +193,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               tabs: const [
                 Tab(text: 'Edit Profile'),
-                Tab(text: 'Settings'),
+                Tab(text: 'Preferences'),
               ],
             ),
           ),
@@ -524,6 +525,25 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: TextStyle(color: Colors.redAccent)),
             ),
           ),
+
+        Divider(indent: 16, endIndent: 16, color: theme.dividerColor),
+
+        // ── App Feedback & Suggestions section ─────────────────────────────
+        _sectionHeader('App Feedback', primary),
+        ListTile(
+          leading: Icon(Icons.lightbulb_outline, color: primary),
+          title: Text('Suggestion for App',
+              style: TextStyle(fontWeight: FontWeight.w500, color: theme.colorScheme.onSurface)),
+          subtitle: Text('Share ideas, feature requests, or feedback to help shape Bitez',
+              style: TextStyle(color: isDark ? Colors.white60 : Colors.black54)),
+          trailing: Icon(Icons.chevron_right, color: isDark ? Colors.white38 : Colors.grey),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AppSuggestionScreen()),
+            );
+          },
+        ),
       ],
     );
   }

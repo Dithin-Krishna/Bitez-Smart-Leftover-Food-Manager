@@ -52,25 +52,26 @@ class ApiService {
   /// Production Cloud URL (re-enable once deployed)
   // static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
 
-  /// Host IP on local Wi-Fi for physical devices (local fallback)
-  static const String _hostWifiIp = '192.168.1.15';
+  /// Host IPs on local Wi-Fi for physical devices (local fallback)
+  static const List<String> _fallbackIps = ['10.51.115.211', '192.168.1.15'];
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
   static List<String> _defaultCandidates() {
     if (kIsWeb) return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    final wifiEndpoints = _fallbackIps.map((ip) => 'http://$ip:3000');
     try {
       if (Platform.isAndroid) {
         return [
           // liveCloudUrl,                     // 🚀 Production cloud backend (Always online anywhere)
           'http://127.0.0.1:3000',          // Works via ADB reverse over USB (Instant local fallback)
           'http://localhost:3000',          // Works via ADB reverse
-          'http://$_hostWifiIp:3000',       // Host Wi-Fi IP
+          ...wifiEndpoints,                 // Host Wi-Fi IPs
           'http://10.0.2.2:3000',           // Android Emulator standard loopback
         ];
       }
     } catch (_) {}
-    return ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://$_hostWifiIp:3000'];
+    return ['http://127.0.0.1:3000', 'http://localhost:3000', ...wifiEndpoints];
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
