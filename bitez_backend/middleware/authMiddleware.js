@@ -26,7 +26,7 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Confirm user still exists in DB
-    const user = await User.findById(decoded.id).select('_id name email');
+    const user = await User.findById(decoded.id).select('_id name email role');
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -34,7 +34,22 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    req.user = { id: user._id.toString(), name: user.name, email: user.email };
+    const adminEmails = [
+      (process.env.ADMIN_ALERT_EMAIL || '').toLowerCase().trim(),
+      (process.env.EMAIL_USER || '').toLowerCase().trim(),
+      'admin@bitez.app',
+    ].filter(Boolean);
+
+    const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase().trim());
+    const isAdmin = user.role === 'admin' || isEmailAdmin;
+
+    req.user = {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: isAdmin ? 'admin' : (user.role || 'user'),
+      isAdmin,
+    };
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -47,4 +62,19 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+/**
+ * requireAdmin — middleware ensuring the authenticated user has admin rights.
+ */
+const requireAdmin = (req, res, next) => {
+  if (!req.user || !req.user.isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Administrator privileges required.',
+    });
+  }
+  next();
+};
+
 module.exports = authMiddleware;
+module.exports.authMiddleware = authMiddleware;
+module.exports.requireAdmin = requireAdmin;

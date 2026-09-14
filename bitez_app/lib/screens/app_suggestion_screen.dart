@@ -52,8 +52,13 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
 
   Future<void> _loadSuggestionsHistory() async {
     setState(() => _isLoadingHistory = true);
-    final token = context.read<AuthProvider>().token;
-    final items = await SuggestionService.instance.getMySuggestions(token: token);
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    final user = auth.user;
+    final items = await SuggestionService.instance.getMySuggestions(
+      token: token,
+      userId: user?.id,
+    );
     if (!mounted) return;
     setState(() {
       _mySuggestions = items;
@@ -90,6 +95,7 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
     try {
       final suggestion = await SuggestionService.instance.submitSuggestion(
         token: token,
+        userId: user?.id,
         title: _titleController.text.trim(),
         description: _descController.text.trim(),
         category: _selectedCategory,
@@ -208,18 +214,73 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
     );
   }
 
+  void _confirmDeleteSuggestion(AppSuggestion item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Delete Suggestion?'),
+          ],
+        ),
+        content: Text('Are you sure you want to delete "${item.title}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final auth = context.read<AuthProvider>();
+              final token = auth.token;
+              final user = auth.user;
+              if (token == null) return;
+              final ok = await SuggestionService.instance.deleteSuggestion(
+                id: item.id,
+                token: token,
+                userId: user?.id,
+              );
+              if (ok) {
+                await _loadSuggestionsHistory();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Suggestion deleted successfully'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final primary = theme.colorScheme.primary;
+    final user = context.watch<AuthProvider>().user;
+    final isAdmin = user?.isAdmin == true;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
-          'Suggestion for App',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        title: Text(
+          isAdmin ? 'App Suggestions (Admin)' : 'Suggestion for App',
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         backgroundColor: theme.appBarTheme.backgroundColor,
         foregroundColor: theme.appBarTheme.foregroundColor,
@@ -236,8 +297,10 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
               text: 'New Suggestion',
             ),
             Tab(
-              icon: const Icon(Icons.history_edu_outlined),
-              text: 'My Suggestions (${_mySuggestions.length})',
+              icon: Icon(isAdmin ? Icons.admin_panel_settings_outlined : Icons.history_edu_outlined),
+              text: isAdmin
+                  ? 'All Suggestions (${_mySuggestions.length})'
+                  : 'My Suggestions (${_mySuggestions.length})',
             ),
           ],
         ),
@@ -246,7 +309,7 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
         controller: _tabController,
         children: [
           _buildFormTab(theme, isDark, primary),
-          _buildHistoryTab(theme, isDark, primary),
+          _buildHistoryTab(theme, isDark, primary, isAdmin: isAdmin),
         ],
       ),
     );
@@ -319,7 +382,34 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
+
+            // ── Privacy Assurance Banner ─────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF132B20) : const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline, size: 18, color: Colors.green),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Private & Confidential: Your suggestions are only visible to you and Bitez app administrators.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFFA5D6A7) : const Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
 
             // ── Category Chips ───────────────────────────────────────────────
             Text(
@@ -566,7 +656,7 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
     );
   }
 
-  Widget _buildHistoryTab(ThemeData theme, bool isDark, Color primary) {
+  Widget _buildHistoryTab(ThemeData theme, bool isDark, Color primary, {bool isAdmin = false}) {
     if (_isLoadingHistory) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -587,22 +677,26 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
                 child: Icon(Icons.lightbulb_outline, size: 48, color: primary),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'No Suggestions Yet',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Text(
+                isAdmin ? 'No User Suggestions Yet' : 'No Suggestions Yet',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
-                'Have ideas to enhance Bitez? Switch to the "New Suggestion" tab and share your thoughts!',
+                isAdmin
+                    ? 'When users submit feedback or ideas for Bitez, they will appear here for admin review.'
+                    : 'Have ideas to enhance Bitez? Switch to the "New Suggestion" tab and share your thoughts! Only you and admins can see them.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
               ),
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('Write a Suggestion'),
-                onPressed: () => _tabController.animateTo(0),
-              ),
+              if (!isAdmin) ...[
+                const SizedBox(height: 20),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Write a Suggestion'),
+                  onPressed: () => _tabController.animateTo(0),
+                ),
+              ],
             ],
           ),
         ),
@@ -613,10 +707,38 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
       onRefresh: _loadSuggestionsHistory,
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
-        itemCount: _mySuggestions.length,
+        itemCount: _mySuggestions.length + (isAdmin ? 1 : 0),
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
-          final item = _mySuggestions[index];
+          if (isAdmin && index == 0) {
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: primary.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.admin_panel_settings, color: primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Admin Review: ${_mySuggestions.length} total suggestions submitted across users. Tap the status badge on any card to update it.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final itemIndex = isAdmin ? index - 1 : index;
+          final item = _mySuggestions[itemIndex];
 
           Color badgeColor;
           switch (item.status) {
@@ -662,23 +784,111 @@ class _AppSuggestionScreenState extends State<AppSuggestionScreen>
                         ),
                       ),
                       const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: badgeColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          item.statusDisplayName,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: badgeColor,
+                      if (isAdmin)
+                        PopupMenuButton<String>(
+                          tooltip: 'Change Status',
+                          onSelected: (newStatus) async {
+                            final token = context.read<AuthProvider>().token;
+                            if (token == null) return;
+                            final ok = await SuggestionService.instance.updateSuggestionStatus(
+                              id: item.id,
+                              status: newStatus,
+                              token: token,
+                            );
+                            if (ok) {
+                              _loadSuggestionsHistory();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Status updated to $newStatus'),
+                                  backgroundColor: Colors.teal,
+                                ),
+                              );
+                            }
+                          },
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(value: 'under_review', child: Text('⏳ Under Review')),
+                            const PopupMenuItem(value: 'planned', child: Text('💡 Planned')),
+                            const PopupMenuItem(value: 'implemented', child: Text('✨ Implemented')),
+                            const PopupMenuItem(value: 'closed', child: Text('✅ Closed / Resolved')),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: badgeColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.statusDisplayName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: badgeColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.arrow_drop_down, size: 14, color: badgeColor),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            item.statusDisplayName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: badgeColor,
+                            ),
                           ),
                         ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                        tooltip: 'Delete Suggestion',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _confirmDeleteSuggestion(item),
                       ),
                     ],
                   ),
+                  if (isAdmin) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white10 : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.account_circle_outlined, size: 14, color: isDark ? Colors.white60 : Colors.black54),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Author: ${item.userName ?? "Anonymous"}${item.userEmail != null && item.userEmail!.isNotEmpty ? " • ${item.userEmail}" : ""}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     item.title,

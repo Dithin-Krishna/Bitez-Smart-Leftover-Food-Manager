@@ -3,10 +3,11 @@ const jwt        = require('jsonwebtoken');
 const Suggestion = require('../models/Suggestion');
 const User       = require('../models/User');
 const auth       = require('../middleware/authMiddleware');
+const { requireAdmin } = require('../middleware/authMiddleware');
 
 /**
  * Optional authentication helper:
- * Attaches req.user if valid token provided, but doesn't block unauthenticated requests.
+ * Attaches req.user if valid token provided, including admin detection.
  */
 const optionalAuth = async (req, res, next) => {
   try {
@@ -14,9 +15,24 @@ const optionalAuth = async (req, res, next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select('_id name email');
+      const user = await User.findById(decoded.id).select('_id name email role');
       if (user) {
-        req.user = { id: user._id.toString(), name: user.name, email: user.email };
+        const adminEmails = [
+          (process.env.ADMIN_ALERT_EMAIL || '').toLowerCase().trim(),
+          (process.env.EMAIL_USER || '').toLowerCase().trim(),
+          'admin@bitez.app',
+        ].filter(Boolean);
+
+        const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase().trim());
+        const isAdmin = user.role === 'admin' || isEmailAdmin;
+
+        req.user = {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: isAdmin ? 'admin' : (user.role || 'user'),
+          isAdmin,
+        };
       }
     }
   } catch (_) {
@@ -69,7 +85,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Thank you for your suggestion! Our team will review it.',
+      message: 'Thank you for your suggestion! Visible to you and Bitez admins.',
       data: suggestion,
     });
   } catch (err) {
@@ -79,14 +95,69 @@ router.post('/', optionalAuth, async (req, res, next) => {
 
 /**
  * @route   GET /api/suggestions/my
- * @desc    Get suggestions submitted by logged-in user
- * @access  Private
+ * @desc    Get suggestions submitted by logged-in user, or ALL suggestions if admin
+ * @access  Private (strictly user + admin)
  */
 router.get('/my', auth, async (req, res, next) => {
   try {
-    const suggestions = await Suggestion.find({ userId: req.user.id })
+    // Security check:
+    // Admin sees all suggestions across all users
+    // Regular users see ONLY their own submitted suggestions
+    const query = req.user.isAdmin ? {} : { userId: req.user.id };
+
+    const suggestions = await Suggestion.find(query)
       .sort({ createdAt: -1 })
-      .limit(30);
+      .limit(req.user.isAdmin ? 100 : 50);
+
+    res.json({
+      success: true,
+      isAdmin: req.user.isAdmin,
+      data: suggestions,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @route   GET /api/suggestions
+ * @desc    Fetch suggestions (Filtered by role: admin gets all, user gets own only)
+ * @access  Private
+ */
+router.get('/', auth, async (req, res, next) => {
+  try {
+    const query = req.user.isAdmin ? {} : { userId: req.user.id };
+    const suggestions = await Suggestion.find(query)
+      .sort({ createdAt: -1 })
+      .limit(req.user.isAdmin ? 100 : 50);
+
+    res.json({
+      success: true,
+      isAdmin: req.user.isAdmin,
+      data: suggestions,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @route   GET /api/suggestions/public
+ * @desc    Restricted endpoint: suggestions are confidential to user & admin
+ * @access  Admin Only
+ */
+router.get('/public', auth, async (req, res, next) => {
+  try {
+    if (!req.user.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access restricted: suggestions are private to the author and admins.',
+      });
+    }
+
+    const suggestions = await Suggestion.find()
+      .sort({ createdAt: -1 })
+      .limit(50);
 
     res.json({
       success: true,
@@ -98,21 +169,62 @@ router.get('/my', auth, async (req, res, next) => {
 });
 
 /**
- * @route   GET /api/suggestions/public
- * @desc    Get curated community suggestions & status
- * @access  Public
+ * @route   PATCH /api/suggestions/:id/status
+ * @desc    Update status of a suggestion
+ * @access  Admin Only
  */
-router.get('/public', async (req, res, next) => {
+router.patch('/:id/status', auth, requireAdmin, async (req, res, next) => {
   try {
-    const suggestions = await Suggestion.find()
-      .select('title category rating status createdAt')
-      .sort({ createdAt: -1 })
-      .limit(20);
+    const { status } = req.body;
+    const allowed = ['under_review', 'planned', 'implemented', 'closed'];
+    if (!status || !allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed values: ${allowed.join(', ')}`,
+      });
+    }
+
+    const suggestion = await Suggestion.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!suggestion) {
+      return res.status(404).json({ success: false, message: 'Suggestion not found' });
+    }
 
     res.json({
       success: true,
-      data: suggestions,
+      message: `Status updated to ${status}`,
+      data: suggestion,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @route   DELETE /api/suggestions/:id
+ * @desc    Delete a suggestion
+ * @access  Private (Author or Admin)
+ */
+router.delete('/:id', auth, async (req, res, next) => {
+  try {
+    const suggestion = await Suggestion.findById(req.params.id);
+    if (!suggestion) {
+      return res.status(404).json({ success: false, message: 'Suggestion not found' });
+    }
+
+    if (!req.user.isAdmin && suggestion.userId?.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You can only delete your own suggestions.',
+      });
+    }
+
+    await suggestion.deleteOne();
+    res.json({ success: true, message: 'Suggestion deleted successfully' });
   } catch (err) {
     next(err);
   }

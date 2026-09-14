@@ -107,4 +107,14 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀  Bitez backend running on http://0.0.0.0:${PORT}`);
   console.log(`📡  Environment: ${process.env.NODE_ENV || 'development'}`);
   initExpiryScheduler();
+
+  // Auto-reverse port forward for Android physical devices via USB
+  if (process.env.NODE_ENV !== 'production') {
+    const { exec } = require('child_process');
+    exec(`adb reverse tcp:${PORT} tcp:${PORT}`, (err) => {
+      if (!err) {
+        console.log(`📱  ADB reverse active: Android phone over USB can reach http://localhost:${PORT}`);
+      }
+    });
+  }
 });

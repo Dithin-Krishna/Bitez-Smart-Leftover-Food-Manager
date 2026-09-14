@@ -5,6 +5,8 @@
 
 # ── Flutter / Dart ─────────────────────────────────────────────────────────────
 bitez_app/build/
+bitez_app/android/build/
+bitez_app/android/.gradle/
 bitez_app/.dart_tool/
 bitez_app/.flutter-plugins
 bitez_app/.flutter-plugins-dependencies
