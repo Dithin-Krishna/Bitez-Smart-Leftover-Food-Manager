@@ -19,7 +19,7 @@ const app = express();
 
 // ── Middleware ─────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: '*',          // In production, replace with your Flutter app's domain or remove
+  origin: '*',          // In production, replace with your Flutter app's domain or remove
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -40,10 +40,10 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
     });
-    console.log('✅  MongoDB Atlas connected successfully');
+    console.log('✅  MongoDB Atlas connected successfully');
   } catch (err) {
-    console.error('⚠️  MongoDB connection failed:', err.message);
-    console.log('💡  Server will continue running in local mode. Verify database credentials in .env.');
+    console.error('❌  MongoDB connection failed:', err.message);
+    process.exit(1);
   }
 };
 connectDB();
@@ -78,7 +78,7 @@ app.use('/api/suggestions', require('./routes/suggestions'));
 app.get('/', (req, res) => {
   res.json({
     status: 'OK',
-    message: '🍽️  Bitez API is running',
+    message: '🍽️  Bitez API is running',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });
@@ -104,7 +104,7 @@ const { initExpiryScheduler } = require('./utils/expiryScheduler');
 // ── Start Server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀  Bitez backend running on http://0.0.0.0:${PORT}`);
-  console.log(`📡  Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🚀  Bitez backend running on http://0.0.0.0:${PORT}`);
+  console.log(`📡  Environment: ${process.env.NODE_ENV || 'development'}`);
   initExpiryScheduler();
 });
