@@ -108,10 +108,19 @@ router.post('/send', authMiddleware, geminiLimiter, async (req, res, next) => {
       : 'No items currently saved in fridge.';
 
     // 2. Fetch user dietary preferences if available
-    const userDoc = await User.findById(req.user.id).select('dietaryPreference maxCookingTime').lean();
-    const prefsText = userDoc
-      ? `Dietary preference: ${userDoc.dietaryPreference || 'None'}, Preferred max cooking time: ${userDoc.maxCookingTime || 30} mins.`
-      : 'No specific preferences saved.';
+    const userDoc = await User.findById(req.user.id)
+      .select('dietaryRestrictions allergies maxCookingTime')
+      .lean();
+
+    const restrictions = Array.isArray(userDoc?.dietaryRestrictions) && userDoc.dietaryRestrictions.length > 0
+      ? userDoc.dietaryRestrictions.join(', ')
+      : 'None specified';
+
+    const allergiesList = Array.isArray(userDoc?.allergies) && userDoc.allergies.length > 0
+      ? userDoc.allergies.join(', ')
+      : 'None reported';
+
+    const maxTime = userDoc?.maxCookingTime || 45;
 
     const systemPrompt = `You are Chef Bitez 🍳, a friendly, passionate, zero-waste culinary AI assistant inside the Bitez Smart Leftover Food Manager app.
 Your goals:
@@ -120,12 +129,17 @@ Your goals:
 3. Suggest clear, step-by-step recipes when asked. Format ingredient lists and instructions with markdown bullet points and bold headers.
 4. Keep answers friendly, inspiring, concise, and structured.
 
+CRITICAL USER PREFERENCES & SAFETY DIRECTIVES:
+- 🚫 ALLERGIES & INTOLERANCES: [${allergiesList}]
+  SAFETY MANDATE: NEVER suggest, include, or recommend any ingredient containing these allergens or their derivatives under any circumstances. If the user asks for a recipe that traditionally uses an allergen, suggest a safe allergen-free substitute.
+- 🥗 DIETARY RESTRICTIONS: [${restrictions}]
+  STRICT MANDATE: Always ensure every dish and suggestion conforms 100% to these dietary choices (e.g. Vegetarian, Vegan, Halal, Gluten-Free, Keto).
+- ⏱️ MAXIMUM COOKING / PREPARATION TIME: [${maxTime} minutes]
+  TIME MANDATE: All suggested recipes and cooking steps MUST be completable within ${maxTime} minutes. Prioritize quick-prep, zero-waste dishes.
+
 USER CONTEXT:
 User's Current Fridge Inventory:
-${inventoryList}
-
-User Preferences:
-${prefsText}`;
+${inventoryList}`;
 
     const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -159,7 +173,15 @@ ${prefsText}`;
           parts: [{ text: message }]
         });
 
-        const candidateModels = ['gemini-flash-latest', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+        const candidateModels = [
+          'gemini-3.6-flash',
+          'gemini-flash-latest',
+          'gemini-flash-lite-latest',
+          'gemini-3.1-flash-lite',
+          'gemini-3-flash-preview',
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite'
+        ];
         for (const modelName of candidateModels) {
           try {
             const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -191,7 +213,11 @@ ${prefsText}`;
 
     // Fallback response generator if Gemini API key is missing or API failed
     if (!aiReply) {
-      aiReply = generateFallbackReply(message, fridgeItems, req.user.name);
+      aiReply = generateFallbackReply(message, fridgeItems, req.user.name, {
+        restrictions,
+        allergiesList,
+        maxTime,
+      });
     }
 
     // Suggest quick follow-up actions based on user message
@@ -224,9 +250,12 @@ ${prefsText}`;
 /**
  * Intelligent local response fallback when no Gemini key is provided or network fails.
  */
-function generateFallbackReply(userMsg, fridgeItems, userName) {
+function generateFallbackReply(userMsg, fridgeItems, userName, userPrefs = {}) {
   const query = userMsg.toLowerCase();
   const itemNames = fridgeItems.map((i) => i.label.toLowerCase());
+  const maxTime = userPrefs.maxTime || 30;
+  const restrictions = userPrefs.restrictions && userPrefs.restrictions !== 'None specified' ? userPrefs.restrictions : null;
+  const allergies = userPrefs.allergiesList && userPrefs.allergiesList !== 'None reported' ? userPrefs.allergiesList : null;
 
   if (query.includes('expir') || query.includes('waste') || query.includes('spoil')) {
     return `### 🧊 Zero-Waste & Expiry Guide
@@ -241,11 +270,18 @@ ${itemNames.length ? `You currently have **${itemNames.slice(0, 4).join(', ')}**
   }
 
   if (query.includes('recipe') || query.includes('cook') || query.includes('make') || query.includes('dish') || query.includes('dinner')) {
+    const prefsNote = [];
+    if (restrictions) prefsNote.push(`🌿 Diet: ${restrictions}`);
+    if (allergies) prefsNote.push(`🚫 Allergen-Free: ${allergies}`);
+    prefsNote.push(`⏱️ Under ${maxTime} mins`);
+
+    const headerNote = prefsNote.length > 0 ? `\n*(${prefsNote.join(' • ')})*\n` : '';
+
     if (itemNames.length > 0) {
       const mainItems = itemNames.slice(0, 3).join(', ');
       return `### 🍳 Leftover Special: Chef Bitez Quick Stir-Fry / Bowl
-
-Great news! Based on your fridge inventory (**${mainItems}**), here is a delicious 15-minute recipe:
+${headerNote}
+Great news! Based on your fridge inventory (**${mainItems}**), here is a delicious ${Math.min(maxTime, 20)}-minute recipe:
 
 #### Ingredients
 - **Main**: ${fridgeItems.slice(0, 3).map((i) => i.label).join(', ')}

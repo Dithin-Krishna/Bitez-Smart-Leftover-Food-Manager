@@ -50,6 +50,20 @@ const userSchema = new mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    dietaryRestrictions: {
+      type: [String],
+      default: [],
+    },
+    allergies: {
+      type: [String],
+      default: [],
+    },
+    maxCookingTime: {
+      type: Number,
+      min: [5, 'Cooking time must be at least 5 minutes'],
+      max: [240, 'Cooking time cannot exceed 240 minutes'],
+      default: 45,
+    },
     resetPasswordOtp: {
       type: String,
     },

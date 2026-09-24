@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const GroceryItem = require('../models/GroceryItem');
 const FridgeItem = require('../models/FridgeItem');
+const User = require('../models/User');
 const { validateAndEnrich } = require('../models/FoodCatalog');
 
 router.use(authMiddleware);
@@ -148,16 +149,34 @@ router.post('/generate', async (req, res, next) => {
 
     if (geminiKey) {
       const candidateModels = [
-        'gemini-flash-lite-latest',
+        'gemini-3.6-flash',
         'gemini-flash-latest',
+        'gemini-flash-lite-latest',
         'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
-        'gemini-2.0-flash-lite',
-        'gemini-2.0-flash'
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite'
       ];
 
-      const promptText = `User's current Virtual Fridge contents: [${fridgeNames || 'Empty Fridge'}].
-Analyze the fridge items and generate 4 to 6 smart grocery restock suggestions. Include missing essential kitchen staples (e.g. Eggs, Milk, Bread, Onion, Salt, Butter) or items with low quantity.
+    // Fetch user dietary preferences if available
+    const userDoc = await User.findById(req.user.id)
+      .select('dietaryRestrictions allergies')
+      .lean();
+
+    const restrictionsStr = Array.isArray(userDoc?.dietaryRestrictions) && userDoc.dietaryRestrictions.length > 0
+      ? userDoc.dietaryRestrictions.join(', ')
+      : 'None';
+    const allergiesStr = Array.isArray(userDoc?.allergies) && userDoc.allergies.length > 0
+      ? userDoc.allergies.join(', ')
+      : 'None';
+
+    const promptText = `User's current Virtual Fridge contents: [${fridgeNames || 'Empty Fridge'}].
+User's Dietary Restrictions: [${restrictionsStr}].
+User's Allergies & Intolerances: [${allergiesStr}].
+
+CRITICAL: NEVER suggest any items that conflict with the user's allergies ([${allergiesStr}]) or dietary restrictions ([${restrictionsStr}]). For instance, do not suggest dairy/eggs for vegans, or nuts if allergic to nuts.
+
+Analyze the fridge items and generate 4 to 6 smart grocery restock suggestions. Include missing essential kitchen staples or items with low quantity that are safe for the user.
 Return ONLY a raw JSON array of objects with schema:
 [
   { "label": "Egg", "emoji": "🥚", "category": "Dairy & Eggs", "section": "dairy", "qty": 1, "reason": "Essential kitchen staple" },

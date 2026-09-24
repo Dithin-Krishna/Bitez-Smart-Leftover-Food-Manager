@@ -18,14 +18,17 @@ router.get('/me', async (req, res, next) => {
     res.json({
       success: true,
       user: {
-        id:        user._id,
-        name:      user.name,
-        email:     user.email,
-        age:       user.age,
-        gender:    user.gender,
-        phone:     user.phone,
-        avatarUrl: user.avatarUrl,
-        createdAt: user.createdAt,
+        id:                  user._id,
+        name:                user.name,
+        email:               user.email,
+        age:                 user.age,
+        gender:              user.gender,
+        phone:               user.phone,
+        avatarUrl:           user.avatarUrl,
+        dietaryRestrictions: user.dietaryRestrictions || [],
+        allergies:           user.allergies || [],
+        maxCookingTime:      user.maxCookingTime || 45,
+        createdAt:           user.createdAt,
       },
     });
   } catch (err) {
@@ -35,12 +38,12 @@ router.get('/me', async (req, res, next) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/user/me
-// Update profile fields (name, age, gender, phone, avatarUrl).
+// Update profile fields (name, age, gender, phone, avatarUrl, dietaryRestrictions, allergies, maxCookingTime).
 // Does NOT update email or password here (separate endpoints for those).
 // ─────────────────────────────────────────────────────────────────────────────
 router.put('/me', async (req, res, next) => {
   try {
-    const allowed  = ['name', 'age', 'gender', 'phone', 'avatarUrl'];
+    const allowed  = ['name', 'age', 'gender', 'phone', 'avatarUrl', 'dietaryRestrictions', 'allergies', 'maxCookingTime'];
     const updates  = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -56,7 +59,18 @@ router.put('/me', async (req, res, next) => {
     res.json({
       success: true,
       message: 'Profile updated.',
-      user: { id: user._id, name: user.name, email: user.email, age: user.age, gender: user.gender, phone: user.phone, avatarUrl: user.avatarUrl },
+      user: {
+        id:                  user._id,
+        name:                user.name,
+        email:               user.email,
+        age:                 user.age,
+        gender:              user.gender,
+        phone:               user.phone,
+        avatarUrl:           user.avatarUrl,
+        dietaryRestrictions: user.dietaryRestrictions || [],
+        allergies:           user.allergies || [],
+        maxCookingTime:      user.maxCookingTime || 45,
+      },
     });
   } catch (err) {
     next(err);

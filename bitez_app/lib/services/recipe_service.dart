@@ -23,6 +23,9 @@ class RecipeService {
   Future<List<RecipeModel>> searchByIngredients(
     List<String> ingredients, {
     String? cuisine,
+    List<String>? dietaryRestrictions,
+    List<String>? allergies,
+    int? maxCookingTime,
   }) async {
     final queryClean = ingredients
         .map((e) => e.trim())
@@ -65,14 +68,66 @@ class RecipeService {
         return b.usedIngredientCount.compareTo(a.usedIngredientCount);
       });
 
+      List<RecipeModel> filtered = combined;
+
+      // 1. Filter out recipes that exceed the user's max preparation time
+      if (maxCookingTime != null && maxCookingTime > 0) {
+        final timeFiltered = filtered.where((r) {
+          if (r.readyInMinutes == null || r.readyInMinutes! <= 0) return true;
+          return r.readyInMinutes! <= maxCookingTime;
+        }).toList();
+        if (timeFiltered.isNotEmpty) {
+          filtered = timeFiltered;
+        }
+      }
+
+      // 2. Strict Filter: Remove any recipe containing declared allergens
+      if (allergies != null && allergies.isNotEmpty) {
+        final lowerAllergies = allergies.map((a) => a.toLowerCase().trim()).toList();
+        final safeFiltered = filtered.where((r) {
+          final allText = '${r.title} ${r.usedIngredients.join(' ')} ${r.missedIngredients.join(' ')}'.toLowerCase();
+          for (final allergy in lowerAllergies) {
+            if (allergy.contains('peanut') && allText.contains('peanut')) return false;
+            if (allergy.contains('tree nut') && (allText.contains('walnut') || allText.contains('almond') || allText.contains('cashew') || allText.contains('pecan') || allText.contains('hazelnut') || allText.contains('pistachio'))) return false;
+            if ((allergy.contains('milk') || allergy.contains('dairy')) && (allText.contains('milk') || allText.contains('cheese') || allText.contains('butter') || allText.contains('cream') || allText.contains('yogurt'))) return false;
+            if (allergy.contains('egg') && allText.contains('egg')) return false;
+            if ((allergy.contains('wheat') || allergy.contains('gluten')) && (allText.contains('flour') || allText.contains('wheat') || allText.contains('bread') || allText.contains('pasta') || allText.contains('noodle'))) return false;
+            if (allergy.contains('soy') && (allText.contains('soy') || allText.contains('tofu') || allText.contains('edamame'))) return false;
+            if (allergy.contains('fish') && (allText.contains('fish') || allText.contains('salmon') || allText.contains('tuna') || allText.contains('cod'))) return false;
+            if (allergy.contains('shellfish') && (allText.contains('shrimp') || allText.contains('crab') || allText.contains('prawn') || allText.contains('lobster') || allText.contains('clam'))) return false;
+            if (allergy.contains('sesame') && (allText.contains('sesame') || allText.contains('tahini'))) return false;
+            if (allText.contains(allergy)) return false;
+          }
+          return true;
+        }).toList();
+        if (safeFiltered.isNotEmpty) {
+          filtered = safeFiltered;
+        }
+      }
+
+      // 3. Filter / prioritize dietary restrictions (e.g. Vegetarian, Vegan)
+      if (dietaryRestrictions != null && dietaryRestrictions.isNotEmpty) {
+        final isVeg = dietaryRestrictions.any((d) => d.toLowerCase().contains('veg'));
+        if (isVeg) {
+          final meatTerms = ['chicken', 'beef', 'pork', 'meat', 'bacon', 'turkey', 'lamb', 'steak', 'ham', 'sausage'];
+          final vegFiltered = filtered.where((r) {
+            final text = '${r.title} ${r.usedIngredients.join(' ')} ${r.missedIngredients.join(' ')}'.toLowerCase();
+            return !meatTerms.any((m) => text.contains(m));
+          }).toList();
+          if (vegFiltered.isNotEmpty) {
+            filtered = vegFiltered;
+          }
+        }
+      }
+
       // Cache search results for offline access
       final queryKey = queryClean.join(',').toLowerCase();
       await OfflineStorageService.instance.cacheSearchResults(
         queryKey,
-        combined.map((r) => r.toJson()).toList(),
+        filtered.map((r) => r.toJson()).toList(),
       );
 
-      return combined;
+      return filtered;
     } catch (_) {
       // Check offline cache
       final queryKey = queryClean.join(',').toLowerCase();

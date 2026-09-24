@@ -26,10 +26,13 @@ const safeUser = (user) => {
     email:     user.email,
     role:      isAdmin ? 'admin' : (user.role || 'user'),
     isAdmin,
-    age:       user.age,
-    gender:    user.gender,
-    phone:     user.phone,
-    avatarUrl: user.avatarUrl,
+    age:                 user.age,
+    gender:              user.gender,
+    phone:               user.phone,
+    avatarUrl:           user.avatarUrl,
+    dietaryRestrictions: user.dietaryRestrictions || [],
+    allergies:           user.allergies || [],
+    maxCookingTime:      user.maxCookingTime || 45,
   };
 };
 

@@ -33,18 +33,29 @@ class _ProfileScreenState extends State<ProfileScreen>
   String? _gender;
   bool _loading = false;
 
-  // Tab controller for Edit Profile / Settings sections
+  // Dietary preferences state
+  late List<String> _selectedDietary;
+  late List<String> _selectedAllergies;
+  late int _maxCookingTime;
+  late TextEditingController _customAllergyCtrl;
+  bool _savingPrefs = false;
+
+  // Tab controller for Edit Profile / Dietary & AI / Settings sections
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     final user = context.read<AuthProvider>().user;
     _nameCtrl = TextEditingController(text: user?.name ?? '');
     _ageCtrl = TextEditingController(text: user?.age?.toString() ?? '');
     _phoneCtrl = TextEditingController(text: user?.phone ?? '');
     _gender = user?.gender;
+    _selectedDietary = List<String>.from(user?.dietaryRestrictions ?? []);
+    _selectedAllergies = List<String>.from(user?.allergies ?? []);
+    _maxCookingTime = user?.maxCookingTime ?? 45;
+    _customAllergyCtrl = TextEditingController();
   }
 
   @override
@@ -53,6 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _nameCtrl.dispose();
     _ageCtrl.dispose();
     _phoneCtrl.dispose();
+    _customAllergyCtrl.dispose();
     super.dispose();
   }
 
@@ -190,10 +202,11 @@ class _ProfileScreenState extends State<ProfileScreen>
               indicatorColor: theme.colorScheme.primary,
               labelColor: theme.colorScheme.primary,
               unselectedLabelColor: isDark ? Colors.white60 : Colors.grey,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               tabs: const [
                 Tab(text: 'Edit Profile'),
-                Tab(text: 'Preferences'),
+                Tab(text: 'Dietary & AI'),
+                Tab(text: 'Settings'),
               ],
             ),
           ),
@@ -204,6 +217,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               controller: _tabController,
               children: [
                 _buildEditProfileTab(theme, isDark),
+                _buildDietaryTab(theme, isDark),
                 _buildSettingsTab(prefs, theme, isDark),
               ],
             ),
@@ -456,6 +470,419 @@ class _ProfileScreenState extends State<ProfileScreen>
           ],
         ),
       ),
+    );
+  }
+
+  // ── Preset options for Dietary & Allergies ──────────────────────────────────
+  static const List<Map<String, String>> _kDietaryOptions = [
+    {'label': 'Vegetarian', 'emoji': '🥦'},
+    {'label': 'Vegan', 'emoji': '🌱'},
+    {'label': 'Keto', 'emoji': '🥑'},
+    {'label': 'Halal', 'emoji': '🌙'},
+    {'label': 'Kosher', 'emoji': '✡️'},
+    {'label': 'Gluten-Free', 'emoji': '🌾'},
+    {'label': 'Dairy-Free', 'emoji': '🥛'},
+    {'label': 'Low-Carb', 'emoji': '🥗'},
+    {'label': 'Pescatarian', 'emoji': '🐟'},
+  ];
+
+  static const List<Map<String, String>> _kCommonAllergies = [
+    {'label': 'Peanuts', 'emoji': '🥜'},
+    {'label': 'Tree Nuts', 'emoji': '🌰'},
+    {'label': 'Dairy / Milk', 'emoji': '🥛'},
+    {'label': 'Eggs', 'emoji': '🥚'},
+    {'label': 'Wheat / Gluten', 'emoji': '🌾'},
+    {'label': 'Soy', 'emoji': '🫘'},
+    {'label': 'Fish', 'emoji': '🐟'},
+    {'label': 'Shellfish', 'emoji': '🦐'},
+    {'label': 'Sesame', 'emoji': '🥯'},
+  ];
+
+  // ── Save dietary preferences to MongoDB ─────────────────────────────────────
+  Future<void> _saveDietaryPreferences() async {
+    setState(() => _savingPrefs = true);
+    try {
+      await context.read<AuthProvider>().updatePreferences(
+        dietaryRestrictions: _selectedDietary,
+        allergies: _selectedAllergies,
+        maxCookingTime: _maxCookingTime,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text('Dietary & AI preferences saved! Chef Bitez is now aligned.'),
+              ),
+            ],
+          ),
+          backgroundColor: Color(0xFF2E7D32),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not connect to server.')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingPrefs = false);
+    }
+  }
+
+  // ── Dietary & AI Tab ────────────────────────────────────────────────────────
+  Widget _buildDietaryTab(ThemeData theme, bool isDark) {
+    final primary = theme.colorScheme.primary;
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      children: [
+        // AI Synced Banner
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E2E40) : const Color(0xFFEDF5FD),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: primary.withOpacity(0.3),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: primary.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.auto_awesome, color: primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI Culinary Engine Synced',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Chef Bitez and Recipe Search will strictly filter out your allergens, honor dietary choices, and ensure cooking times never exceed your limit.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: isDark ? Colors.white70 : const Color(0xFF4A5568),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Section 1: Dietary Restrictions
+        _sectionHeader('DIETARY RESTRICTIONS', primary),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            'Select all that apply to your lifestyle:',
+            style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _kDietaryOptions.map((opt) {
+            final isSelected = _selectedDietary.contains(opt['label']);
+            return FilterChip(
+              avatar: Text(opt['emoji']!, style: const TextStyle(fontSize: 14)),
+              label: Text(
+                opt['label']!,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? primary : theme.colorScheme.onSurface,
+                  fontSize: 13,
+                ),
+              ),
+              selected: isSelected,
+              showCheckmark: false,
+              selectedColor: primary.withOpacity(0.18),
+              backgroundColor: theme.cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: isSelected ? primary : (isDark ? const Color(0xFF2A3D54) : Colors.grey.shade300),
+                  width: isSelected ? 1.5 : 1,
+                ),
+              ),
+              onSelected: (selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedDietary.add(opt['label']!);
+                  } else {
+                    _selectedDietary.remove(opt['label']);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 24),
+        Divider(color: theme.dividerColor),
+        const SizedBox(height: 8),
+
+        // Section 2: Allergies & Intolerances
+        Row(
+          children: [
+            Icon(Icons.health_and_safety_outlined, size: 18, color: Colors.redAccent),
+            const SizedBox(width: 6),
+            Text(
+              'ALLERGIES & INTOLERANCES',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: Colors.redAccent,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            'High-priority safety mandate: AI will never suggest these ingredients.',
+            style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _kCommonAllergies.map((item) {
+            final isSelected = _selectedAllergies.contains(item['label']);
+            return FilterChip(
+              avatar: Text(item['emoji']!, style: const TextStyle(fontSize: 14)),
+              label: Text(
+                item['label']!,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? Colors.redAccent : theme.colorScheme.onSurface,
+                  fontSize: 13,
+                ),
+              ),
+              selected: isSelected,
+              showCheckmark: false,
+              selectedColor: Colors.redAccent.withOpacity(0.16),
+              backgroundColor: theme.cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: isSelected ? Colors.redAccent : (isDark ? const Color(0xFF2A3D54) : Colors.grey.shade300),
+                  width: isSelected ? 1.5 : 1,
+                ),
+              ),
+              onSelected: (selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedAllergies.add(item['label']!);
+                  } else {
+                    _selectedAllergies.remove(item['label']);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+
+        // Custom Allergies Added by User
+        if (_selectedAllergies.any((a) => !_kCommonAllergies.any((c) => c['label'] == a))) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _selectedAllergies
+                .where((a) => !_kCommonAllergies.any((c) => c['label'] == a))
+                .map((customAllergy) {
+              return Chip(
+                avatar: const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.redAccent),
+                label: Text(customAllergy, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.redAccent)),
+                backgroundColor: Colors.redAccent.withOpacity(0.12),
+                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                onDeleted: () {
+                  setState(() {
+                    _selectedAllergies.remove(customAllergy);
+                  });
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: Colors.redAccent, width: 1),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+
+        // Input to add a custom allergy
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _customAllergyCtrl,
+                style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13),
+                decoration: _fieldDecoration('Add custom allergy (e.g. Mustard, Sulfites)', theme, isDark).copyWith(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                onSubmitted: (val) {
+                  final text = val.trim();
+                  if (text.isNotEmpty && !_selectedAllergies.contains(text)) {
+                    setState(() {
+                      _selectedAllergies.add(text);
+                      _customAllergyCtrl.clear();
+                    });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.add, size: 20),
+              onPressed: () {
+                final text = _customAllergyCtrl.text.trim();
+                if (text.isNotEmpty && !_selectedAllergies.contains(text)) {
+                  setState(() {
+                    _selectedAllergies.add(text);
+                    _customAllergyCtrl.clear();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+        Divider(color: theme.dividerColor),
+        const SizedBox(height: 8),
+
+        // Section 3: Maximum Cooking Preparation Time
+        _sectionHeader('MAXIMUM COOKING & PREP TIME', primary),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recipes suggested must be ready within:',
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '⏱️ $_maxCookingTime mins',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Slider(
+          value: _maxCookingTime.toDouble().clamp(10.0, 120.0),
+          min: 10,
+          max: 120,
+          divisions: 22,
+          activeColor: primary,
+          label: '$_maxCookingTime mins',
+          onChanged: (val) {
+            setState(() {
+              _maxCookingTime = val.round();
+            });
+          },
+        ),
+
+        // Quick Preset Chips for Time
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [15, 30, 45, 60].map((mins) {
+            final isSelected = _maxCookingTime == mins;
+            return ChoiceChip(
+              label: Text('${mins}m'),
+              selected: isSelected,
+              selectedColor: primary.withOpacity(0.2),
+              labelStyle: TextStyle(
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+                color: isSelected ? primary : theme.colorScheme.onSurface,
+                fontSize: 12,
+              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              onSelected: (_) {
+                setState(() => _maxCookingTime = mins);
+              },
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 32),
+
+        // Save Button
+        ElevatedButton.icon(
+          onPressed: _savingPrefs ? null : _saveDietaryPreferences,
+          icon: _savingPrefs
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.check_circle_outline, size: 20),
+          label: Text(
+            _savingPrefs ? 'Saving Preferences...' : 'Save Dietary Preferences',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 2,
+          ),
+        ),
+
+        const SizedBox(height: 24),
+      ],
     );
   }
 

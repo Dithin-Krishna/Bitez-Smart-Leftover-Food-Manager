@@ -36,12 +36,13 @@ router.post('/detect', authMiddleware, geminiLimiter, async (req, res, next) => 
 
     if (geminiKey) {
       const candidateModels = [
-        'gemini-flash-lite-latest',
+        'gemini-3.6-flash',
         'gemini-flash-latest',
+        'gemini-flash-lite-latest',
         'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
-        'gemini-2.0-flash-lite',
-        'gemini-2.0-flash'
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite'
       ];
       const promptText = `Analyze this image and identify ALL visible edible food items, raw ingredients, fruits, vegetables, dairy, eggs, meats, seafood, beverages, bakery items, or prepared dishes.${yoloHint}
 Count the exact number/quantity of each distinct food item visible (e.g. individual fruits, vegetables, eggs, slices, bottles, cans). If an item is in bulk, liquid, or a cooked dish (like rice, soup, milk), set qty to 1.
@@ -201,12 +202,13 @@ router.post('/expiry-ocr', authMiddleware, geminiLimiter, async (req, res, next)
 
     if (geminiKey) {
       const candidateModels = [
-        'gemini-flash-lite-latest',
+        'gemini-3.6-flash',
         'gemini-flash-latest',
+        'gemini-flash-lite-latest',
         'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
-        'gemini-2.0-flash-lite',
-        'gemini-2.0-flash'
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite'
       ];
       const promptText = `Analyze this close-up image of food packaging / expiry date area.
 Carefully look for text indicating Expiry Date (EXP, Expiration, Use By, Best Before, BB, BB/MA) and Manufacturing Date (MFG, MFD, Packed Date, Date of Mfg).

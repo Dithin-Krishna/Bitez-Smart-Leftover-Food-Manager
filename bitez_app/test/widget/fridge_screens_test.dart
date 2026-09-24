@@ -60,7 +60,13 @@ class FakeFridgeAuthProvider extends ChangeNotifier implements AuthProvider {
     String? gender,
     String? phone,
     String? avatarUrl,
+    List<String>? dietaryRestrictions,
+    List<String>? allergies,
+    int? maxCookingTime,
   }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
   @override
   Future<void> logout() async {}

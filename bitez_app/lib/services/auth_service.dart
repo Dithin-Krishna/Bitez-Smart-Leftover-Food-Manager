@@ -81,6 +81,9 @@ class AuthService {
     String? gender,
     String? phone,
     String? avatarUrl,
+    List<String>? dietaryRestrictions,
+    List<String>? allergies,
+    int? maxCookingTime,
   }) async {
     final json = await ApiService.instance.put('/api/user/me', {
       if (name != null) 'name': name,
@@ -88,6 +91,9 @@ class AuthService {
       if (gender != null) 'gender': gender,
       if (phone != null) 'phone': phone,
       if (avatarUrl != null) 'avatarUrl': avatarUrl,
+      if (dietaryRestrictions != null) 'dietaryRestrictions': dietaryRestrictions,
+      if (allergies != null) 'allergies': allergies,
+      if (maxCookingTime != null) 'maxCookingTime': maxCookingTime,
     }, token: token);
     
     return UserModel.fromJson(json['user'] as Map<String, dynamic>);

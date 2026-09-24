@@ -68,6 +68,9 @@ class AuthProvider extends ChangeNotifier {
     String? gender,
     String? phone,
     String? avatarUrl,
+    List<String>? dietaryRestrictions,
+    List<String>? allergies,
+    int? maxCookingTime,
   }) async {
     if (_token == null) return;
     
@@ -78,10 +81,25 @@ class AuthProvider extends ChangeNotifier {
       gender: gender,
       phone: phone,
       avatarUrl: avatarUrl,
+      dietaryRestrictions: dietaryRestrictions,
+      allergies: allergies,
+      maxCookingTime: maxCookingTime,
     );
     
     _user = updatedUser;
     notifyListeners();
+  }
+
+  Future<void> updatePreferences({
+    required List<String> dietaryRestrictions,
+    required List<String> allergies,
+    required int maxCookingTime,
+  }) async {
+    await updateProfile(
+      dietaryRestrictions: dietaryRestrictions,
+      allergies: allergies,
+      maxCookingTime: maxCookingTime,
+    );
   }
 
   // ── Logout ─────────────────────────────────────────────────────────────────

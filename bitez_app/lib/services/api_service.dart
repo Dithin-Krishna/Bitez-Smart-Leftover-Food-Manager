@@ -53,7 +53,7 @@ class ApiService {
   // static const String liveCloudUrl = 'https://bitez-smart-leftover-food-manager.onrender.com';
 
   /// Host IPs on local Wi-Fi for physical devices (local fallback)
-  static const List<String> _fallbackIps = ['10.51.115.211', '192.168.1.15'];
+  static const List<String> _fallbackIps = ['192.168.0.160', '10.51.115.211', '192.168.1.15'];
 
   static String get baseUrl => customBaseUrl ?? _defaultCandidates().first;
 
@@ -100,8 +100,10 @@ class ApiService {
     for (final base in candidates) {
       try {
         final timeoutDuration = base.startsWith('https://')
-            ? const Duration(seconds: 25) // Allow time for cloud cold start
-            : const Duration(seconds: 4);  // Quick local network check
+            ? const Duration(seconds: 30) // Allow time for cloud cold start
+            : (customBaseUrl == base
+                ? const Duration(seconds: 25) // Known connected host processing AI/Gemini requests
+                : const Duration(seconds: 4)); // Fast probing for alternative candidate hosts
         final res = await req(base).timeout(timeoutDuration);
         customBaseUrl = base; // Cache successful connection URL
         return _parse(res);

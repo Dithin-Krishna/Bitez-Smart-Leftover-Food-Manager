@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/recipe_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/saved_recipes_provider.dart';
 import '../services/recipe_service.dart';
 import 'recipe_detail_screen.dart';
@@ -44,9 +45,13 @@ class _RecipeResultsScreenState extends State<RecipeResultsScreen> {
     });
 
     try {
+      final user = context.read<AuthProvider>().user;
       final results = await RecipeService.instance.searchByIngredients(
         widget.ingredients,
         cuisine: _selectedCuisineCode,
+        dietaryRestrictions: user?.dietaryRestrictions,
+        allergies: user?.allergies,
+        maxCookingTime: user?.maxCookingTime,
       );
       if (mounted) {
         setState(() {
