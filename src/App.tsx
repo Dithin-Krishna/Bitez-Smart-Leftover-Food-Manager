@@ -27,6 +27,12 @@ const NAV_LINKS = [
   'Help Centre',
 ]
 
+// Authorized admin credentials map
+const AUTHORIZED_ADMINS = [
+  { email: 'bhadra050127@gmail.com', password: 'Bhadra@123' },
+  { email: 'dithinkrishna45@gmail.com', password: 'dithin@123' },
+]
+
 function BitezLogo() {
   return (
     <div className="bitez-logo-icon">
@@ -37,7 +43,6 @@ function BitezLogo() {
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
-
   const [isLogin, setIsLogin] = useState(false)
 
   // Controlled form state
@@ -62,14 +67,12 @@ function App() {
     y: -999,
   })
 
-  const animationFrame =
-    useRef<number | null>(null)
+  const animationFrame = useRef<number | null>(null)
 
-  const [cursorPosition, setCursorPosition] =
-    useState({
-      x: -999,
-      y: -999,
-    })
+  const [cursorPosition, setCursorPosition] = useState({
+    x: -999,
+    y: -999,
+  })
 
   /*
   =====================================
@@ -78,58 +81,34 @@ function App() {
   */
 
   useEffect(() => {
-    const handleMouseMove =
-      (event: MouseEvent) => {
-        mouse.current = {
-          x: event.clientX,
-          y: event.clientY,
-        }
+    const handleMouseMove = (event: MouseEvent) => {
+      mouse.current = {
+        x: event.clientX,
+        y: event.clientY,
       }
+    }
 
-    window.addEventListener(
-      'mousemove',
-      handleMouseMove,
-    )
+    window.addEventListener('mousemove', handleMouseMove)
 
     const animateMouse = () => {
-      smoothMouse.current.x +=
-        (mouse.current.x -
-          smoothMouse.current.x) *
-        0.1
-
-      smoothMouse.current.y +=
-        (mouse.current.y -
-          smoothMouse.current.y) *
-        0.1
+      smoothMouse.current.x += (mouse.current.x - smoothMouse.current.x) * 0.1
+      smoothMouse.current.y += (mouse.current.y - smoothMouse.current.y) * 0.1
 
       setCursorPosition({
         x: smoothMouse.current.x,
         y: smoothMouse.current.y,
       })
 
-      animationFrame.current =
-        requestAnimationFrame(
-          animateMouse,
-        )
+      animationFrame.current = requestAnimationFrame(animateMouse)
     }
 
-    animationFrame.current =
-      requestAnimationFrame(
-        animateMouse,
-      )
+    animationFrame.current = requestAnimationFrame(animateMouse)
 
     return () => {
-      window.removeEventListener(
-        'mousemove',
-        handleMouseMove,
-      )
+      window.removeEventListener('mousemove', handleMouseMove)
 
-      if (
-        animationFrame.current !== null
-      ) {
-        cancelAnimationFrame(
-          animationFrame.current,
-        )
+      if (animationFrame.current !== null) {
+        cancelAnimationFrame(animationFrame.current)
       }
     }
   }, [])
@@ -140,43 +119,56 @@ function App() {
   =====================================
   */
 
-  const handleSubmit = (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage('')
 
-    const allowedAdmins = ['bhadra', 'dithin']
+    const normalizedEmail = email.trim().toLowerCase()
 
     if (isLogin) {
-      // Check if entered email matches authorized admin profiles
-      const isValidAdmin = allowedAdmins.some((admin) =>
-        email.toLowerCase().includes(admin),
+      // Validate exact Email AND Password combination
+      const adminAccount = AUTHORIZED_ADMINS.find(
+        (admin) =>
+          admin.email.toLowerCase() === normalizedEmail &&
+          admin.password === password
       )
 
-      if (isValidAdmin) {
+      if (adminAccount) {
         localStorage.setItem('bitez_logged_in', 'true')
         setShowDashboard(true)
       } else {
-        setErrorMessage('Access denied: Only Bhadra and Dithin are authorized admins.')
+        setErrorMessage('Invalid admin email or password.')
       }
     } else {
-      // Validate registration details
+      // Registration Validation
       if (password !== confirmPassword) {
         setErrorMessage('Passwords do not match.')
         return
       }
 
-      const isValidName = allowedAdmins.includes(name.trim().toLowerCase())
-      const isValidEmail = allowedAdmins.some((admin) =>
-        email.toLowerCase().includes(admin),
+      const isValidEmail = AUTHORIZED_ADMINS.some(
+        (admin) => admin.email.toLowerCase() === normalizedEmail
       )
 
-      if (isValidName || isValidEmail) {
+      if (isValidEmail) {
+        // Enforce the designated password during signup as well
+        const validPassword = AUTHORIZED_ADMINS.find(
+          (admin) => admin.email.toLowerCase() === normalizedEmail
+        )?.password
+
+        if (password !== validPassword) {
+          setErrorMessage(
+            `Password must match the required criteria for ${normalizedEmail}.`
+          )
+          return
+        }
+
         localStorage.setItem('bitez_logged_in', 'true')
         setShowDashboard(true)
       } else {
-        setErrorMessage('Access denied: Only Bhadra and Dithin can register as admins.')
+        setErrorMessage(
+          'Access denied: Only bhadra050127@gmail.com and dithinkrishna45@gmail.com are allowed.'
+        )
       }
     }
   }
@@ -190,9 +182,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('bitez_logged_in')
     setShowDashboard(false)
-
     setIsLogin(true)
-
     setMobileOpen(false)
   }
 
@@ -203,11 +193,7 @@ function App() {
   */
 
   if (showDashboard) {
-    return (
-      <HomeDashboard
-        onLogout={handleLogout}
-      />
-    )
+    return <HomeDashboard onLogout={handleLogout} />
   }
 
   /*
@@ -218,15 +204,12 @@ function App() {
 
   return (
     <div className="lithos-app">
-
       {/* ============================= */}
       {/* NAVIGATION */}
       {/* ============================= */}
 
       <nav className="lithos-nav">
-
         {/* LOGO */}
-
         <button
           type="button"
           className="logo-button"
@@ -238,30 +221,19 @@ function App() {
           }}
         >
           <BitezLogo />
-
-          <span>
-            BITEZ
-          </span>
-
+          <span>BITEZ</span>
         </button>
 
         {/* DESKTOP NAVIGATION */}
-
         <div className="desktop-nav">
-
           {NAV_LINKS.map((link) => (
-            <button
-              key={link}
-              type="button"
-            >
+            <button key={link} type="button">
               {link}
             </button>
           ))}
-
         </div>
 
         {/* MOBILE MENU BUTTON */}
-
         <button
           type="button"
           className="mobile-menu"
@@ -269,31 +241,23 @@ function App() {
             setMobileOpen(!mobileOpen)
           }}
         >
-          {mobileOpen ? (
-            <X size={24} />
-          ) : (
-            <Menu size={24} />
-          )}
+          {mobileOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
         {/* MOBILE NAVIGATION */}
-
         {mobileOpen && (
           <div className="mobile-nav">
-
-            {NAV_LINKS.map(
-              (link) => (
-                <button
-                  key={link}
-                  type="button"
-                  onClick={() => {
-                    setMobileOpen(false)
-                  }}
-                >
-                  {link}
-                </button>
-              ),
-            )}
+            {NAV_LINKS.map((link) => (
+              <button
+                key={link}
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false)
+                }}
+              >
+                {link}
+              </button>
+            ))}
 
             <button
               type="button"
@@ -306,10 +270,8 @@ function App() {
             >
               Sign Up
             </button>
-
           </div>
         )}
-
       </nav>
 
       {/* ============================= */}
@@ -317,19 +279,15 @@ function App() {
       {/* ============================= */}
 
       <main className="hero-page">
-
         {/* BACKGROUND IMAGE */}
-
         <div
           className="hero-image"
           style={{
-            backgroundImage:
-              `url(${BG_IMAGE_1})`,
+            backgroundImage: `url(${BG_IMAGE_1})`,
           }}
         />
 
         {/* CURSOR REVEAL */}
-
         <RevealLayer
           image={BG_IMAGE_2}
           cursorX={cursorPosition.x}
@@ -337,7 +295,6 @@ function App() {
         />
 
         {/* DARK OVERLAY */}
-
         <div className="hero-dark-overlay" />
 
         {/* ============================= */}
@@ -345,40 +302,24 @@ function App() {
         {/* ============================= */}
 
         <section className="hero-content">
-
-          <div className="hero-tag">
-            SMART LEFTOVER FOOD MANAGER
-          </div>
+          <div className="hero-tag">SMART LEFTOVER FOOD MANAGER</div>
 
           <h1>
-
-            <span className="italic-title">
-              Leftovers aren't
-            </span>
-
-            <span>
-              the end of a meal.
-            </span>
-
+            <span className="italic-title">Leftovers aren't</span>
+            <span>the end of a meal.</span>
           </h1>
 
           <p className="hero-description">
-            Manage smarter. Waste less.
-            Make an impact.
+            Manage smarter. Waste less. Make an impact.
           </p>
 
           <p className="hero-long-description">
-            BITEZ helps you manage
-            leftover food, track expiry
-            dates, discover recipes,
-            reduce food waste and make
-            every bite count.
+            BITEZ helps you manage leftover food, track expiry dates, discover
+            recipes, reduce food waste and make every bite count.
           </p>
 
           {/* BUTTON */}
-
           <div className="hero-actions">
-
             <button
               type="button"
               className="primary-button"
@@ -386,77 +327,42 @@ function App() {
                 setIsLogin(false)
                 setErrorMessage('')
 
-                const authSection =
-                  document.querySelector(
-                    '.auth-panel',
-                  )
+                const authSection = document.querySelector('.auth-panel')
 
                 authSection?.scrollIntoView({
                   behavior: 'smooth',
                   block: 'center',
                 })
 
-                authSection?.classList.add(
-                  'auth-highlight',
-                )
+                authSection?.classList.add('auth-highlight')
 
                 setTimeout(() => {
-                  authSection?.classList.remove(
-                    'auth-highlight',
-                  )
+                  authSection?.classList.remove('auth-highlight')
                 }, 1500)
               }}
             >
               Start making every bite count.
-
               <ArrowRight size={18} />
-
             </button>
-
           </div>
 
           {/* FEATURES */}
-
           <div className="hero-features">
-
             <div>
-
-              <strong>
-                AI Powered
-              </strong>
-
-              <span>
-                Smart food recognition
-              </span>
-
+              <strong>AI Powered</strong>
+              <span>Smart food recognition</span>
             </div>
 
             <div>
-
-              <strong>
-                Less Waste
-              </strong>
-
-              <span>
-                Track expiry dates
-              </span>
-
+              <strong>Less Waste</strong>
+              <span>Track expiry dates</span>
             </div>
 
             <div>
-
-              <strong>
-                More Impact
-              </strong>
-
-              <span>
-                Sustainable living
-              </span>
-
+              <strong>More Impact</strong>
+              <span>Sustainable living</span>
             </div>
-
           </div>
-
         </section>
 
         {/* ============================= */}
@@ -464,34 +370,18 @@ function App() {
         {/* ============================= */}
 
         <section className="auth-wrapper">
-
           <div className="auth-panel">
-
             {/* BRAND */}
-
             <div className="auth-brand">
-
-              <div className="auth-logo">
-                B
-              </div>
-
-              <span>
-                BITEZ
-              </span>
-
+              <div className="auth-logo">B</div>
+              <span>BITEZ</span>
             </div>
 
             {/* TABS */}
-
             <div className="auth-tabs">
-
               <button
                 type="button"
-                className={
-                  !isLogin
-                    ? 'active-tab'
-                    : ''
-                }
+                className={!isLogin ? 'active-tab' : ''}
                 onClick={() => {
                   setIsLogin(false)
                   setErrorMessage('')
@@ -502,11 +392,7 @@ function App() {
 
               <button
                 type="button"
-                className={
-                  isLogin
-                    ? 'active-tab'
-                    : ''
-                }
+                className={isLogin ? 'active-tab' : ''}
                 onClick={() => {
                   setIsLogin(true)
                   setErrorMessage('')
@@ -514,29 +400,19 @@ function App() {
               >
                 Login
               </button>
-
             </div>
 
             {/* HEADING */}
-
             <div className="auth-heading">
-
-              <h2>
-                {isLogin
-                  ? 'Welcome back'
-                  : 'Join the movement'}
-              </h2>
-
+              <h2>{isLogin ? 'Welcome back' : 'Join the movement'}</h2>
               <p>
                 {isLogin
                   ? 'Continue to the BITEZ admin dashboard.'
                   : 'Create your admin account to manage BITEZ.'}
               </p>
-
             </div>
 
             {/* ERROR ALERT */}
-
             {errorMessage && (
               <div
                 style={{
@@ -555,22 +431,11 @@ function App() {
             )}
 
             {/* FORM */}
-
-            <form
-              className="signup-form"
-              onSubmit={handleSubmit}
-            >
-
+            <form className="signup-form" onSubmit={handleSubmit}>
               {/* ADMIN NAME */}
-
               {!isLogin && (
-
                 <div className="input-group">
-
-                  <label htmlFor="name">
-                    ADMIN NAME
-                  </label>
-
+                  <label htmlFor="name">ADMIN NAME</label>
                   <input
                     id="name"
                     type="text"
@@ -579,19 +444,12 @@ function App() {
                     onChange={(e) => setName(e.target.value)}
                     required
                   />
-
                 </div>
-
               )}
 
               {/* EMAIL */}
-
               <div className="input-group">
-
-                <label htmlFor="email">
-                  ADMIN EMAIL
-                </label>
-
+                <label htmlFor="email">ADMIN EMAIL</label>
                 <input
                   id="email"
                   type="email"
@@ -600,17 +458,11 @@ function App() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
-
               </div>
 
               {/* PASSWORD */}
-
               <div className="input-group">
-
-                <label htmlFor="password">
-                  PASSWORD
-                </label>
-
+                <label htmlFor="password">PASSWORD</label>
                 <input
                   id="password"
                   type="password"
@@ -619,19 +471,12 @@ function App() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-
               </div>
 
               {/* CONFIRM PASSWORD */}
-
               {!isLogin && (
-
                 <div className="input-group">
-
-                  <label htmlFor="confirmPassword">
-                    CONFIRM PASSWORD
-                  </label>
-
+                  <label htmlFor="confirmPassword">CONFIRM PASSWORD</label>
                   <input
                     id="confirmPassword"
                     type="password"
@@ -640,51 +485,29 @@ function App() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                   />
-
                 </div>
-
               )}
 
               {/* FORGOT PASSWORD */}
-
               {isLogin && (
-
-                <button
-                  type="button"
-                  className="forgot-password"
-                >
+                <button type="button" className="forgot-password">
                   Forgot password?
                 </button>
-
               )}
 
               {/* SUBMIT */}
-
-              <button
-                type="submit"
-                className="create-account-button"
-              >
-
-                {isLogin
-                  ? 'Login to Dashboard'
-                  : 'Create Admin Account'}
-
+              <button type="submit" className="create-account-button">
+                {isLogin ? 'Login to Dashboard' : 'Create Admin Account'}
                 <ArrowRight size={18} />
-
               </button>
-
             </form>
 
             {/* FOOTER */}
-
             <div className="auth-footer">
-
               <span>
-
                 {isLogin
                   ? "Don't have an account?"
                   : 'Already have an account?'}
-
               </span>
 
               <button
@@ -694,17 +517,10 @@ function App() {
                   setErrorMessage('')
                 }}
               >
-
-                {isLogin
-                  ? 'Sign Up'
-                  : 'Login'}
-
+                {isLogin ? 'Sign Up' : 'Login'}
               </button>
-
             </div>
-
           </div>
-
         </section>
 
         {/* ============================= */}
@@ -712,17 +528,10 @@ function App() {
         {/* ============================= */}
 
         <div className="scroll-indicator">
-
-          <span>
-            DISCOVER SMARTER FOOD MANAGEMENT
-          </span>
-
+          <span>DISCOVER SMARTER FOOD MANAGEMENT</span>
           <div />
-
         </div>
-
       </main>
-
     </div>
   )
 }
