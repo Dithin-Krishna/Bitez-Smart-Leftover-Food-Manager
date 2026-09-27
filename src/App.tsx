@@ -40,7 +40,14 @@ function App() {
 
   const [isLogin, setIsLogin] = useState(false)
 
-  // FIX: Initialize state from localStorage to persist across refreshes
+  // Controlled form state
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+
+  // Initialize state from localStorage to persist across refreshes
   const [showDashboard, setShowDashboard] = useState<boolean>(() => {
     return localStorage.getItem('bitez_logged_in') === 'true'
   })
@@ -129,7 +136,7 @@ function App() {
 
   /*
   =====================================
-  LOGIN / SIGNUP
+  LOGIN / SIGNUP VALIDATION
   =====================================
   */
 
@@ -137,13 +144,41 @@ function App() {
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
+    setErrorMessage('')
 
-    // MongoDB authentication
-    // can be connected here later
+    const allowedAdmins = ['bhadra', 'dithin']
 
-    // FIX: Save login status to localStorage
-    localStorage.setItem('bitez_logged_in', 'true')
-    setShowDashboard(true)
+    if (isLogin) {
+      // Check if entered email matches authorized admin profiles
+      const isValidAdmin = allowedAdmins.some((admin) =>
+        email.toLowerCase().includes(admin),
+      )
+
+      if (isValidAdmin) {
+        localStorage.setItem('bitez_logged_in', 'true')
+        setShowDashboard(true)
+      } else {
+        setErrorMessage('Access denied: Only Bhadra and Dithin are authorized admins.')
+      }
+    } else {
+      // Validate registration details
+      if (password !== confirmPassword) {
+        setErrorMessage('Passwords do not match.')
+        return
+      }
+
+      const isValidName = allowedAdmins.includes(name.trim().toLowerCase())
+      const isValidEmail = allowedAdmins.some((admin) =>
+        email.toLowerCase().includes(admin),
+      )
+
+      if (isValidName || isValidEmail) {
+        localStorage.setItem('bitez_logged_in', 'true')
+        setShowDashboard(true)
+      } else {
+        setErrorMessage('Access denied: Only Bhadra and Dithin can register as admins.')
+      }
+    }
   }
 
   /*
@@ -153,7 +188,6 @@ function App() {
   */
 
   const handleLogout = () => {
-    // FIX: Remove login status from localStorage on logout
     localStorage.removeItem('bitez_logged_in')
     setShowDashboard(false)
 
@@ -266,7 +300,7 @@ function App() {
               className="mobile-signup"
               onClick={() => {
                 setIsLogin(false)
-
+                setErrorMessage('')
                 setMobileOpen(false)
               }}
             >
@@ -350,6 +384,7 @@ function App() {
               className="primary-button"
               onClick={() => {
                 setIsLogin(false)
+                setErrorMessage('')
 
                 const authSection =
                   document.querySelector(
@@ -459,6 +494,7 @@ function App() {
                 }
                 onClick={() => {
                   setIsLogin(false)
+                  setErrorMessage('')
                 }}
               >
                 Sign Up
@@ -473,6 +509,7 @@ function App() {
                 }
                 onClick={() => {
                   setIsLogin(true)
+                  setErrorMessage('')
                 }}
               >
                 Login
@@ -498,6 +535,25 @@ function App() {
 
             </div>
 
+            {/* ERROR ALERT */}
+
+            {errorMessage && (
+              <div
+                style={{
+                  color: '#ff4d4d',
+                  backgroundColor: 'rgba(255, 77, 77, 0.1)',
+                  padding: '0.75rem',
+                  borderRadius: '6px',
+                  marginBottom: '1rem',
+                  fontSize: '0.875rem',
+                  textAlign: 'center',
+                  border: '1px solid rgba(255, 77, 77, 0.3)',
+                }}
+              >
+                {errorMessage}
+              </div>
+            )}
+
             {/* FORM */}
 
             <form
@@ -519,6 +575,8 @@ function App() {
                     id="name"
                     type="text"
                     placeholder="Enter admin name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     required
                   />
 
@@ -538,6 +596,8 @@ function App() {
                   id="email"
                   type="email"
                   placeholder="admin@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
 
@@ -555,6 +615,8 @@ function App() {
                   id="password"
                   type="password"
                   placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
 
@@ -574,6 +636,8 @@ function App() {
                     id="confirmPassword"
                     type="password"
                     placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                   />
 
@@ -627,6 +691,7 @@ function App() {
                 type="button"
                 onClick={() => {
                   setIsLogin(!isLogin)
+                  setErrorMessage('')
                 }}
               >
 
